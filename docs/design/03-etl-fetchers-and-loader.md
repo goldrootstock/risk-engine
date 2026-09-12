@@ -1,6 +1,6 @@
 # 설계 노트 03 — ETL fetcher · 로더 · CLI
 
-- 상태: **승인 대기** (2026-09-12)
+- 상태: 노트 **승인**(2026-09-12). §11 의 6개 항목은 채팅 요약 후 개별 승인 대기
 - 전제: 노트 02(소스·정책·유니버스 31계열·전체 이력 적재) 확정, 노트 00(검증은 읽기 전용) 적용, 0003 마이그레이션(`source_id`·`return_type`·어휘) 적용
 - 역할: 이 노트와 픽스처·테스트 뼈대 = Claude / fetcher 3개·로더·CLI 구현 = JK / 리뷰 = Claude
 - 번호: 수익률 빌더 노트는 **04** 로 밀린다
@@ -105,7 +105,8 @@ class LoadResult:
 | 인증 | 없음 | 없음 | 무료 API 키 (`EIA_API_KEY` 환경변수, `.env`) |
 | 한 번의 fetch 가 주는 것 | 12 source_id 전부 (열 단위) | 11 source_id 전부 (열 단위), 연도당 1요청 | source_id 하나당 1~2요청 (RWTC 는 1986~ ≈ 10,000행 → 2페이지) |
 | 형식 특이점 [확인, 픽스처 기준] | 첫 열 `Date`(YYYY-MM-DD), **내림차순**, 결측 `N/A`, **모든 줄 끝에 콤마**(빈 마지막 열) | 첫 열 `Date`(**MM/DD/YYYY**), 헤더가 따옴표(`"1 Mo"`), 내림차순, 결측은 빈 문자열, 연도마다 열 구성이 다름(1990 = 9열, 2020 = 13열) | `response.data[]` 의 `period`(YYYY-MM-DD)·`value`(**문자열**)·`series`. 음수 존재 (`-36.98`) |
-| parse 규칙 | 열 = source_id(ISO). `N/A`→NaN 후 행 제거. 마지막 빈 열 버림 | 열 이름의 따옴표·공백 정규화 후 source_id 로 선택. 없는 열이면 그 연도는 빈 프레임(오류 아님 — 1990 에 `1 Mo` 없음) | `value` 를 float 로. `series` 가 요청과 다르면 error. `total` 과 받은 행 수 비교 |
+| parse 규칙 | 열 = source_id(ISO). `N/A`→NaN 후 행 제거. 마지막 빈 열 버림 | 열 이름의 따옴표·공백 정규화 후 source_id 로 선택. 없는 열이면 그 연도는 빈 프레임(오류 아님 — 1990 에 `1 Mo` 없음) | `value` 는 **문자열**(끝 0 탈락, `12.4`) → float. `series` 가 요청과 다르면 error. `total` 과 받은 행 수 비교. `duoarea`·`area-name` 등 facet 필드는 무시 |
+| **비밀 처리** | 없음 | 없음 | 응답의 `request.params.api_key` 에 **키가 그대로 에코된다** [확인 2026-09-12]. `fetch` 는 캐시에 쓰기 전에 그 필드를 `<redacted>` 로 바꾼다. 요청 URL 도 로그에 남기지 않는다(키가 쿼리스트링에 있음) |
 | 값 → 컬럼 | `close = adj_close = 값`, `volume = NA` | 동일 (단위 = %, 예: 0.93) | 동일 |
 | 증분 | 전체 zip 을 매번 받는다(≈1 MB). 증분 개념 없음 | `start` 의 연도부터 현재 연도까지만 | `start` 파라미터 지원 |
 | 재시도 | HTTP 5xx·타임아웃에 지수 백오프 3회. 4xx 는 즉시 실패 | 동일 | 동일 + 429 (rate limit) 는 대기 후 재시도 |
@@ -121,6 +122,7 @@ data/raw/<source>/<source_id>/manifest.jsonl     # 한 줄 = {fetched_at, sha256
 ```
 
 - 새 fetch 는 **항상 새 파일**. 덮어쓰지 않는다. `--offline` 은 최신 파일을 읽는다.
+- **비밀은 캐시에 들어가지 않는다.** EIA 응답은 요청 파라미터(API 키 포함)를 에코하므로 `fetch` 가 키를 지운 바이트를 넘긴다. manifest 의 `url` 도 쿼리스트링을 뺀 형태로 기록한다. 캐시 디렉터리는 gitignore 지만 그것에 기대지 않는다.
 - 같은 sha256 이면 파일을 쓰지 않고 manifest 에만 기록(중복 방지).
 - ECB 처럼 소스 파일 하나가 여러 source_id 를 담으면 `<source>/_all/` 아래 저장하고 parse 가 열을 고른다.
 - 정리(`prune`)는 별도 명령. sync 는 지우지 않는다.
@@ -176,7 +178,8 @@ status                       # 계열별 first/last price_date, 행 수, 마지�
 |---|---|---|
 | `test_parse_ecb` | `ecb_eurofxref-hist_2020-03_04.csv` | 42행 → 12 source_id 각각 DataFrame, `N/A` 제거, 오름차순, 꼬리 콤마 열 없음 |
 | `test_parse_ustreasury` | `ustreasury_…_2020-03_04.csv` | `"10 Yr"` 선택, MM/DD/YYYY → date, 없는 열(`4 Mo`) 요청 시 빈 프레임 |
-| `test_parse_eia` | `eia_rwtc_2020-04.json` | `-36.98` 이 float 로, `series` 검증, 15행 |
+| `test_parse_eia` | `eia_rwtc_2020-04.json` | `-36.98` 이 float 로, `12.4` 문자열 처리, `series` 검증, 15행 |
+| `test_eia_scrubs_api_key` | 키가 든 가짜 응답 | `fetch` 가 넘기는 바이트와 manifest 에 키 문자열이 없다 |
 | `test_validate_*` | 위 프레임 변형 | 중복 날짜 = error, WTI 음수 = warning(absolute), FX 음수 = error(log) |
 | `test_upsert_prices` (`db`) | 임시 스키마 | 두 번 적재 시 두 번째는 unchanged, 값 하나 바꾸면 updated=1 이고 다른 행 `loaded_at` 불변 |
 | `test_universe_upsert` (`db`) | `config/universe.csv` | 재적재 시 `instrument_id` 불변 |

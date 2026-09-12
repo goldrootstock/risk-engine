@@ -6,8 +6,8 @@
   "data": [
    {
     "period": "2020-05-01",
-    "duoarea": "Y05",
-    "area-name": "CUSHING, OK",
+    "duoarea": "YCUOK",
+    "area-name": "NA",
     "product": "EPCWTI",
     "product-name": "WTI Crude Oil",
     "process": "PF4",
@@ -19,8 +19,8 @@
    },
    {
     "period": "2020-04-30",
-    "duoarea": "Y05",
-    "area-name": "CUSHING, OK",
+    "duoarea": "YCUOK",
+    "area-name": "NA",
     "product": "EPCWTI",
     "product-name": "WTI Crude Oil",
     "process": "PF4",
@@ -32,8 +32,8 @@
    },
    {
     "period": "2020-04-29",
-    "duoarea": "Y05",
-    "area-name": "CUSHING, OK",
+    "duoarea": "YCUOK",
+    "area-name": "NA",
     "product": "EPCWTI",
     "product-name": "WTI Crude Oil",
     "process": "PF4",
@@ -45,21 +45,21 @@
    },
    {
     "period": "2020-04-28",
-    "duoarea": "Y05",
-    "area-name": "CUSHING, OK",
+    "duoarea": "YCUOK",
+    "area-name": "NA",
     "product": "EPCWTI",
     "product-name": "WTI Crude Oil",
     "process": "PF4",
     "process-name": "Spot Price FOB",
     "series": "RWTC",
     "series-description": "Cushing, OK WTI Spot Price FOB (Dollars per Barrel)",
-    "value": "12.40",
+    "value": "12.4",
     "units": "$/BBL"
    },
    {
     "period": "2020-04-27",
-    "duoarea": "Y05",
-    "area-name": "CUSHING, OK",
+    "duoarea": "YCUOK",
+    "area-name": "NA",
     "product": "EPCWTI",
     "product-name": "WTI Crude Oil",
     "process": "PF4",
@@ -71,8 +71,8 @@
    },
    {
     "period": "2020-04-24",
-    "duoarea": "Y05",
-    "area-name": "CUSHING, OK",
+    "duoarea": "YCUOK",
+    "area-name": "NA",
     "product": "EPCWTI",
     "product-name": "WTI Crude Oil",
     "process": "PF4",
@@ -84,8 +84,8 @@
    },
    {
     "period": "2020-04-23",
-    "duoarea": "Y05",
-    "area-name": "CUSHING, OK",
+    "duoarea": "YCUOK",
+    "area-name": "NA",
     "product": "EPCWTI",
     "product-name": "WTI Crude Oil",
     "process": "PF4",
@@ -97,8 +97,8 @@
    },
    {
     "period": "2020-04-22",
-    "duoarea": "Y05",
-    "area-name": "CUSHING, OK",
+    "duoarea": "YCUOK",
+    "area-name": "NA",
     "product": "EPCWTI",
     "product-name": "WTI Crude Oil",
     "process": "PF4",
@@ -110,8 +110,8 @@
    },
    {
     "period": "2020-04-21",
-    "duoarea": "Y05",
-    "area-name": "CUSHING, OK",
+    "duoarea": "YCUOK",
+    "area-name": "NA",
     "product": "EPCWTI",
     "product-name": "WTI Crude Oil",
     "process": "PF4",
@@ -123,8 +123,8 @@
    },
    {
     "period": "2020-04-20",
-    "duoarea": "Y05",
-    "area-name": "CUSHING, OK",
+    "duoarea": "YCUOK",
+    "area-name": "NA",
     "product": "EPCWTI",
     "product-name": "WTI Crude Oil",
     "process": "PF4",
@@ -136,8 +136,8 @@
    },
    {
     "period": "2020-04-17",
-    "duoarea": "Y05",
-    "area-name": "CUSHING, OK",
+    "duoarea": "YCUOK",
+    "area-name": "NA",
     "product": "EPCWTI",
     "product-name": "WTI Crude Oil",
     "process": "PF4",
@@ -149,8 +149,8 @@
    },
    {
     "period": "2020-04-16",
-    "duoarea": "Y05",
-    "area-name": "CUSHING, OK",
+    "duoarea": "YCUOK",
+    "area-name": "NA",
     "product": "EPCWTI",
     "product-name": "WTI Crude Oil",
     "process": "PF4",
@@ -162,8 +162,8 @@
    },
    {
     "period": "2020-04-15",
-    "duoarea": "Y05",
-    "area-name": "CUSHING, OK",
+    "duoarea": "YCUOK",
+    "area-name": "NA",
     "product": "EPCWTI",
     "product-name": "WTI Crude Oil",
     "process": "PF4",
@@ -175,8 +175,8 @@
    },
    {
     "period": "2020-04-14",
-    "duoarea": "Y05",
-    "area-name": "CUSHING, OK",
+    "duoarea": "YCUOK",
+    "area-name": "NA",
     "product": "EPCWTI",
     "product-name": "WTI Crude Oil",
     "process": "PF4",
@@ -188,8 +188,8 @@
    },
    {
     "period": "2020-04-13",
-    "duoarea": "Y05",
-    "area-name": "CUSHING, OK",
+    "duoarea": "YCUOK",
+    "area-name": "NA",
     "product": "EPCWTI",
     "product-name": "WTI Crude Oil",
     "process": "PF4",
@@ -199,12 +199,12 @@
     "value": "22.36",
     "units": "$/BBL"
    }
-  ],
-  "description": "Cushing, OK WTI Spot Price FOB. Values transcribed from the EIA daily history table (2026-09-12); envelope per EIA API v2 documentation. Facet field values (duoarea, product, process) are illustrative until a live response is captured."
+  ]
  },
  "request": {
   "command": "/v2/petroleum/pri/spt/data/",
   "params": {
+   "api_key": "<redacted>",
    "frequency": "daily",
    "data": [
     "value"
@@ -221,8 +221,11 @@
      "column": "period",
      "direction": "desc"
     }
-   ]
+   ],
+   "offset": "0",
+   "length": "5000"
   }
  },
- "apiVersion": "2.1.9"
+ "apiVersion": "2.1.13",
+ "ExcelAddInVersion": "2.1.0"
 }
