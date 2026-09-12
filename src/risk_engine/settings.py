@@ -44,7 +44,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if env is None:
         import os
 
-        load_dotenv()
+        # Explicit path: the no-argument form walks the call stack to locate the caller's
+        # directory and asserts when there is none (stdin scripts, REPL, notebooks).
+        load_dotenv(Path.cwd() / ".env")
         env = os.environ
 
     url = env.get("DATABASE_URL", "").strip()
