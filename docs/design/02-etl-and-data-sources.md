@@ -152,6 +152,7 @@ data/raw/<source>/<ticker>.csv         # gitignore. 받은 원본 캐시 (--offl
 ```python
 class Source(Protocol):
     name: str
+
     def fetch(self, ticker: str, start: date, end: date) -> pd.DataFrame:
         """Columns: price_date(date), close(float), adj_close(float), volume(int|NA). 결측 행은 제거해서 반환."""
 ```
