@@ -1,0 +1,55 @@
+"""Runtime configuration read from environment variables (and an optional ``.env`` file).
+
+Only two knobs exist today; keep it that way until a third one is genuinely needed.
+"""
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+DEFAULT_MIGRATIONS_DIR = Path("db/migrations")
+
+
+class SettingsError(RuntimeError):
+    """Raised when required configuration is missing or malformed."""
+
+
+@dataclass(frozen=True, slots=True)
+class Settings:
+    """Immutable bag of runtime configuration.
+
+    Attributes:
+        database_url: PostgreSQL connection URL, e.g. ``postgresql://risk:risk@localhost:5432/risk``.
+        migrations_dir: Directory containing ``NNNN_name.sql`` migration files.
+    """
+
+    database_url: str
+    migrations_dir: Path = DEFAULT_MIGRATIONS_DIR
+
+
+def load_settings(env: Mapping[str, str] | None = None) -> Settings:
+    """Build :class:`Settings` from ``env`` (default: the process environment).
+
+    When ``env`` is ``None`` a ``.env`` file in the current directory is loaded first;
+    values already present in the environment are never overridden by the file.
+
+    Args:
+        env: Explicit mapping to read from, mainly for tests. Skips ``.env`` loading.
+
+    Raises:
+        SettingsError: if ``DATABASE_URL`` is missing or empty.
+    """
+    if env is None:
+        import os
+
+        load_dotenv()
+        env = os.environ
+
+    url = env.get("DATABASE_URL", "").strip()
+    if not url:
+        raise SettingsError("DATABASE_URL is not set (copy .env.example to .env)")
+
+    migrations_dir = Path(env.get("MIGRATIONS_DIR", "").strip() or DEFAULT_MIGRATIONS_DIR)
+    return Settings(database_url=url, migrations_dir=migrations_dir)
