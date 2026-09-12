@@ -34,6 +34,10 @@ and kept as the record of *why*. The notes are part of the deliverable.
   the VaR/ES band drawn on a P&L chart. Details: `docs/design/01-data-layer-schema.md` §1-1.
 - Units: every result measure has one unit fixed in `risk_measure_types`; fractions of NAV
   are derived, never stored.
+- **Checks and validations are read-only.** A function named check / validate / verify /
+  backtest / status returns findings and never mutates data, files, the database or
+  parameters; state changes live in separately named commands whose diff a human reviews.
+  Rationale and the list of places this can break in P1: `docs/design/00-verification-is-read-only.md`.
 - Commits: Conventional Commits with scopes `data`, `etl`, `risk`, `backtest`, `margin`,
   `ci`, `docs`. One commit = one decision unit.
 
