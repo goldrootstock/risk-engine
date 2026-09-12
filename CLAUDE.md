@@ -89,7 +89,18 @@ This project is built with an AI coding assistant (Claude Code) under an explici
 | **Both** | Review each other's work. The author's code is reviewed by the assistant; the assistant's notes and infrastructure are reviewed by the author. |
 
 Process: design note → author's approval (recorded in the note's status line) → code.
-Nothing goes into the schema or the model without an approved note. The author's professional
+Nothing goes into the schema or the model without an approved note.
+
+Per module, the code is written in four steps:
+
+1. The assistant adds the function signatures, docstrings and tests first. Bodies are left
+   empty (`raise NotImplementedError`), so the tests fail.
+2. The author fills in the bodies until the tests pass.
+3. The assistant reviews the diff and points out Python idioms the author may not know,
+   with the Java equivalent where one exists.
+4. When the module is done, the author explains in their own words what it does and what it
+   assumes; the assistant names what is missing from that explanation. The explanation is
+   the interview answer, so it has to stand on its own. The author's professional
 background is Java; the assistant explains Python idioms when they first appear so that the
 author can defend every line in the repository.
 
