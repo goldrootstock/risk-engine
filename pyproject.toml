@@ -26,8 +26,8 @@ dependencies = [
 dev = [
   "pytest>=8.3",
   "pytest-cov>=5.0",
-  "ruff>=0.6",
-  "mypy>=1.11",
+  "ruff==0.16.7",   # pinned: local gate and CI must run the same formatter/linter
+  "mypy==2.3.1",    # pinned: bump deliberately, never by accident of a fresh install
   "pandas-stubs>=2.2",
 ]
 

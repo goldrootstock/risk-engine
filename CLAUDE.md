@@ -37,6 +37,20 @@ and kept as the record of *why*. The notes are part of the deliverable.
 - Commits: Conventional Commits with scopes `data`, `etl`, `risk`, `backtest`, `margin`,
   `ci`, `docs`. One commit = one decision unit.
 
+### Local gate before every commit
+
+- `make check` runs exactly what CI runs: `ruff check`, `ruff format --check`, `mypy`, `pytest`.
+  It never modifies files. `make fmt` is the only write-mode command and is run on purpose,
+  with the diff reviewed before committing.
+- Optional check-only hook: `git config core.hooksPath .githooks` makes `pre-commit` run
+  `make check` and block the commit on failure. It does not auto-fix anything; bypass with
+  `git commit --no-verify` only when you know why.
+- `ruff format` also formats fenced Python blocks in Markdown (design notes, README). This is
+  intended: documented code must be real, formatted code. Blocks that are deliberate fragments
+  are fenced as `text`, not `python`.
+- `ruff` and `mypy` are pinned to exact versions in `pyproject.toml` so the local gate and CI
+  cannot drift; bump them deliberately in their own commit.
+
 ## 3. Data policy
 
 - Raw vendor data is never committed (`data/raw/` is git-ignored). The repository holds

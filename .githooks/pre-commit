@@ -1,0 +1,8 @@
+#!/bin/sh
+# Check-only pre-commit hook: runs the same gate as CI and blocks the commit on failure.
+# It never modifies files. Enable once per clone:  git config core.hooksPath .githooks
+# Bypass deliberately with:                        git commit --no-verify
+set -e
+cd "$(git rev-parse --show-toplevel)"
+if [ -f .env ]; then set -a; . ./.env; set +a; fi   # DATABASE_URL for db tests, if configured
+make check
