@@ -2,11 +2,26 @@
 
 Portfolio Risk & CCP Margin Engine — an independent project in Python / PostgreSQL.
 
+> **Status: work in progress, week 1 of ~8 (started 2026-09-12).**
+> Done: project scaffold with CI, PostgreSQL schema (`instruments`, `prices`, `positions`,
+> `risk_runs`, `risk_measures`) with migration runner and tests, design notes 01–02.
+> Not yet: ETL, return matrix, FHS ES/VaR, backtests, stress, model document, dashboard,
+> margin module, API. Nothing here computes a risk number yet. The design notes under
+> `docs/design/` are the current deliverable and describe what will be built and why.
+
 - **Risk module**: filtered historical simulation (EWMA / GARCH volatility scaling), Expected Shortfall 97.5% (FRTB-style, stressed window) and VaR 99%, component / incremental attribution, historical and hypothetical stress scenarios.
 - **Validation**: regulatory VaR/ES backtesting (Kupiec POF, Christoffersen independence, Basel traffic light) and a PLA-style Spearman / KS test; SR 11-7-style model documentation.
 - **Margin module** (later): VaR/ES-based initial margin in the style of SPAN 2 / IRM 2 (2-day MPOR, anti-procyclicality floors, liquidity add-on, spot/futures cross-margining), legacy SPAN comparison, margin coverage backtest, Cover-2 default-fund sizing.
 
-Status: week 1 — data layer. Design notes live in [`docs/design/`](docs/design/).
+Design notes live in [`docs/design/`](docs/design/). Project conventions, including how AI
+assistance is used, are in [`CLAUDE.md`](CLAUDE.md).
+
+## Data
+
+Universe v1 is 31 public-domain daily series: 11 U.S. Treasury par-yield maturities, 12 ECB
+euro reference rates (used as USD crosses) and 8 EIA energy spot prices. Equities and futures
+are planned for v2 once a licensed source is confirmed. Raw vendor files are never committed;
+the ETL reloads the full history from the original sources. See design note 02.
 
 ## Requirements
 
