@@ -76,14 +76,16 @@ def discover(directory: Path) -> list[Migration]:
 
 
 def applied_versions(conn: psycopg.Connection[Any]) -> dict[int, str]:
-    """Return ``{version: name}`` of applied migrations.
+    """Return ``{version: name}`` of applied migrations. Read-only.
 
-    Creates the ``schema_migrations`` bookkeeping table on first use.
+    On a database that has never been migrated the bookkeeping table does not exist
+    yet; that is reported as "nothing applied", not created here. Only :func:`upgrade`
+    writes.
     """
-    with conn.transaction():
-        conn.execute(_BOOTSTRAP)
-        cursor = conn.execute("SELECT version, name FROM schema_migrations ORDER BY version")
-        rows = cursor.fetchall()
+    exists = conn.execute("SELECT to_regclass('schema_migrations') IS NOT NULL").fetchone()
+    if exists is None or not exists[0]:
+        return {}
+    rows = conn.execute("SELECT version, name FROM schema_migrations ORDER BY version").fetchall()
     return {int(version): str(name) for version, name in rows}
 
 
@@ -93,6 +95,8 @@ def upgrade(conn: psycopg.Connection[Any], directory: Path) -> list[Migration]:
     Each migration and its ``schema_migrations`` row are committed together.
     Running this twice is a no-op the second time.
     """
+    with conn.transaction():
+        conn.execute(_BOOTSTRAP)
     applied = applied_versions(conn)
     done: list[Migration] = []
     for migration in discover(directory):
@@ -112,7 +116,7 @@ def upgrade(conn: psycopg.Connection[Any], directory: Path) -> list[Migration]:
 
 
 def status(conn: psycopg.Connection[Any], directory: Path) -> list[tuple[Migration, bool]]:
-    """Return ``(migration, is_applied)`` for every migration on disk."""
+    """Return ``(migration, is_applied)`` for every migration on disk. Read-only."""
     applied = applied_versions(conn)
     return [(m, m.version in applied) for m in discover(directory)]
 
