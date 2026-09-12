@@ -273,4 +273,18 @@ Databento(M1) 로 실물 선물이 들어오면 해당 문장을 삭제하고 �
 | shifted log ln((P+c)/(P_{t-1}+c)) | c 를 골라야 함(예: 40) | 결과가 c 에 종속. 음수 금리의 shifted-lognormal 처럼 알려진 기법이지만 c 는 자의적 | c 마다 다른 백테스트 |
 | 에너지만 별도 처리 | 위 중 하나를 에너지에만 | 상품별 정의가 달라도 **표준화 잔차 행렬은 단위 없는 z 라서 날짜별 공동 샘플링(상관 구조)이 유지**된다 | 상품별 P&L 을 합산할 뿐이라 영향 없음 |
 
+**예약된 실험 (노트 04 에서 수행)**: 2020-04-20 을 포함하는 창에서 WTI 의 절대 변화 vs shifted log(c ∈ {10, 40, 100}) 로 ES 97.5% 와 Kupiec 결과가 어떻게 달라지는지 민감도 표를 만든다. 결과는 모델 문서 "방법론 선택의 근거" 절에 들어간다.
+
 **방침**: 상품 속성 `return_type ∈ {log, absolute}` 를 두고, FX(와 v2 주식)는 `log`, 국채 수익률과 에너지 현물은 `absolute`. FHS 는 z 를 공동 샘플링하고 상품별로 σ(오늘) × 오늘 단위(달러 또는 bp)로 되돌려 P&L 을 만든다. 절대 변화의 단점(원유 $100 에서의 달러 변동성이 $30 보다 크다는 수준 의존성)은 EWMA σ_$ 가 창 안에서 적응하며 부분 흡수하고, 나머지는 모델 문서 한계에 쓴다. shifted log 는 c 민감도 실험으로만 남긴다. 부수 효과: WTI 음수 구간에서 롱 포지션의 평가액이 음수가 되므로 `portfolio_value` 가 음수일 수 있다 — 결과를 NAV 비율이 아니라 통화로 저장한 결정(노트 01 §8-4)이 여기서도 맞다.
+
+## 12. 0003 마이그레이션 — 유니버스 적재에 필요한 어휘 (승인 대기)
+
+`config/universe.csv` 31행을 현재 스키마에 넣어 보니 세 가지가 부족했다. 노트 없이 스키마를 바꾸지 않는다는 규칙에 따라 여기 기록하고 승인을 받는다.
+
+| 변경 | 내용 | 이유 |
+|---|---|---|
+| `instrument_type` 어휘 확장 | `yield_curve`(상수만기 par 수익률) · `commodity_spot`(현물 평가가) 추가 | 기존 5개(stock·etf·future·fx_spot·index)에 국채 수익률과 에너지 현물이 들어갈 자리가 없었다. `index` 로 우겨 넣으면 마진 모듈의 현물/선물 판정이 틀어진다 |
+| `source_id TEXT NOT NULL` | 벤더 측 식별자 — 재무부 CSV 열 이름(`10 Yr`), ECB ISO 코드(`JPY`), EIA 계열 id(`RWTC`) | `ticker` 는 우리 안정 심볼(`UST_10Y`), 벤더 키는 별도. fetcher 가 `source_id` 만 보고 동작해야 유니버스 추가가 CSV 한 줄로 끝난다. 노트 01 §2-1 의 "ticker = 소스 기준 심볼" 문구는 이걸로 정정 |
+| `return_type TEXT CHECK (log, absolute)` | §11 의 방침을 상품 속성으로 | 수익률 빌더가 데이터 주도로 분기. 국채·에너지 = absolute, FX = log |
+
+`config/universes.toml` 은 §3-1 의 이름 붙인 집합 3개(default · from_1999 · rates_energy_1990). 테스트 `test_universe_csv_loads_into_instruments` 가 31행 전부가 DB 제약을 통과하는지 CI 에서 검사한다.

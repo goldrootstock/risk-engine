@@ -1,0 +1,32 @@
+source,ticker,source_id,name,asset_class,instrument_type,quote_type,return_type,currency,multiplier
+ustreasury,UST_1M,1 Mo,U.S. Treasury par yield 1-month,rates,yield_curve,yield,absolute,USD,1
+ustreasury,UST_3M,3 Mo,U.S. Treasury par yield 3-month,rates,yield_curve,yield,absolute,USD,1
+ustreasury,UST_6M,6 Mo,U.S. Treasury par yield 6-month,rates,yield_curve,yield,absolute,USD,1
+ustreasury,UST_1Y,1 Yr,U.S. Treasury par yield 1-year,rates,yield_curve,yield,absolute,USD,1
+ustreasury,UST_2Y,2 Yr,U.S. Treasury par yield 2-year,rates,yield_curve,yield,absolute,USD,1
+ustreasury,UST_3Y,3 Yr,U.S. Treasury par yield 3-year,rates,yield_curve,yield,absolute,USD,1
+ustreasury,UST_5Y,5 Yr,U.S. Treasury par yield 5-year,rates,yield_curve,yield,absolute,USD,1
+ustreasury,UST_7Y,7 Yr,U.S. Treasury par yield 7-year,rates,yield_curve,yield,absolute,USD,1
+ustreasury,UST_10Y,10 Yr,U.S. Treasury par yield 10-year,rates,yield_curve,yield,absolute,USD,1
+ustreasury,UST_20Y,20 Yr,U.S. Treasury par yield 20-year,rates,yield_curve,yield,absolute,USD,1
+ustreasury,UST_30Y,30 Yr,U.S. Treasury par yield 30-year,rates,yield_curve,yield,absolute,USD,1
+ecb,EURUSD,USD,ECB euro reference rate USD per EUR,fx,fx_spot,price,log,USD,1
+ecb,EURJPY,JPY,ECB euro reference rate JPY per EUR,fx,fx_spot,price,log,JPY,1
+ecb,EURGBP,GBP,ECB euro reference rate GBP per EUR,fx,fx_spot,price,log,GBP,1
+ecb,EURCHF,CHF,ECB euro reference rate CHF per EUR,fx,fx_spot,price,log,CHF,1
+ecb,EURCAD,CAD,ECB euro reference rate CAD per EUR,fx,fx_spot,price,log,CAD,1
+ecb,EURAUD,AUD,ECB euro reference rate AUD per EUR,fx,fx_spot,price,log,AUD,1
+ecb,EURNZD,NZD,ECB euro reference rate NZD per EUR,fx,fx_spot,price,log,NZD,1
+ecb,EURSEK,SEK,ECB euro reference rate SEK per EUR,fx,fx_spot,price,log,SEK,1
+ecb,EURNOK,NOK,ECB euro reference rate NOK per EUR,fx,fx_spot,price,log,NOK,1
+ecb,EURSGD,SGD,ECB euro reference rate SGD per EUR,fx,fx_spot,price,log,SGD,1
+ecb,EURKRW,KRW,ECB euro reference rate KRW per EUR,fx,fx_spot,price,log,KRW,1
+ecb,EURCNY,CNY,ECB euro reference rate CNY per EUR,fx,fx_spot,price,log,CNY,1
+eia,WTI,RWTC,WTI crude oil spot Cushing OK (USD/bbl),commodity,commodity_spot,price,absolute,USD,1
+eia,BRENT,RBRTE,Brent crude oil spot Europe (USD/bbl),commodity,commodity_spot,price,absolute,USD,1
+eia,GASOLINE_NYH,EER_EPMRU_PF4_Y35NY_DPG,NY Harbor conventional gasoline regular spot (USD/gal),commodity,commodity_spot,price,absolute,USD,1
+eia,GASOLINE_USGC,EER_EPMRU_PF4_RGC_DPG,US Gulf Coast conventional gasoline regular spot (USD/gal),commodity,commodity_spot,price,absolute,USD,1
+eia,HEATOIL_NYH,EER_EPD2F_PF4_Y35NY_DPG,NY Harbor No. 2 heating oil spot (USD/gal),commodity,commodity_spot,price,absolute,USD,1
+eia,JET_USGC,EER_EPJK_PF4_RGC_DPG,US Gulf Coast kerosene-type jet fuel spot (USD/gal),commodity,commodity_spot,price,absolute,USD,1
+eia,PROPANE_MB,EER_EPLLPA_PF4_Y44MB_DPG,Mont Belvieu TX propane spot (USD/gal),commodity,commodity_spot,price,absolute,USD,1
+eia,HENRYHUB,RNGWHHD,Henry Hub natural gas spot (USD/MMBtu),commodity,commodity_spot,price,absolute,USD,1

@@ -31,22 +31,28 @@ def _table_names(conn: psycopg.Connection[Any]) -> set[str]:
 
 INSERT_INSTRUMENT = (
     "INSERT INTO instruments "
-    "(source, ticker, name, asset_class, instrument_type, currency) "
-    "VALUES (%s, %s, %s, %s, %s, %s) RETURNING instrument_id"
+    "(source, ticker, source_id, name, asset_class, instrument_type, currency) "
+    "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING instrument_id"
 )
 
 
 def _insert_spy(conn: psycopg.Connection[Any]) -> int:
     row = conn.execute(
-        INSERT_INSTRUMENT, ("yfinance", "SPY", "SPDR S&P 500 ETF", "equity", "etf", "USD")
+        INSERT_INSTRUMENT, ("yfinance", "SPY", "SPY", "SPDR S&P 500 ETF", "equity", "etf", "USD")
     ).fetchone()
     assert row is not None
     return int(row[0])
 
 
+def test_status_is_read_only_on_fresh_database(db_conn: psycopg.Connection[Any]) -> None:
+    pending = status(db_conn, MIGRATIONS_DIR)
+    assert pending and not any(applied for _, applied in pending)
+    assert _table_names(db_conn) == set()  # status must not create schema_migrations
+
+
 def test_upgrade_creates_tables_and_is_idempotent(db_conn: psycopg.Connection[Any]) -> None:
     first = upgrade(db_conn, MIGRATIONS_DIR)
-    assert [m.label for m in first] == ["0001_init", "0002_risk_runs"]
+    assert [m.label for m in first] == ["0001_init", "0002_risk_runs", "0003_instrument_vocab"]
     expected = {
         "schema_migrations",
         "instruments",
@@ -65,9 +71,13 @@ def test_upgrade_creates_tables_and_is_idempotent(db_conn: psycopg.Connection[An
 def test_instrument_constraints(migrated: psycopg.Connection[Any]) -> None:
     _insert_spy(migrated)
     with pytest.raises(UniqueViolation):
-        migrated.execute(INSERT_INSTRUMENT, ("yfinance", "SPY", "dup", "equity", "etf", "USD"))
+        migrated.execute(
+            INSERT_INSTRUMENT, ("yfinance", "SPY", "SPY", "dup", "equity", "etf", "USD")
+        )
     with pytest.raises(CheckViolation):
-        migrated.execute(INSERT_INSTRUMENT, ("yfinance", "X", "bad class", "crypto", "etf", "USD"))
+        migrated.execute(
+            INSERT_INSTRUMENT, ("yfinance", "X", "X", "bad class", "crypto", "etf", "USD")
+        )
 
 
 def test_prices_upsert_updates_existing_row(migrated: psycopg.Connection[Any]) -> None:
@@ -194,3 +204,57 @@ def test_deleting_run_cascades_to_measures(migrated: psycopg.Connection[Any]) ->
     migrated.execute(INSERT_MEASURE, (run, "var", 0.99, "portfolio", "", 1.0))
     migrated.execute("DELETE FROM risk_runs WHERE run_id = %s", (run,))
     assert migrated.execute("SELECT count(*) FROM risk_measures").fetchone() == (0,)
+
+
+# ----------------------------------------------------------------- 0003 + config/universe.csv
+
+
+def test_universe_csv_loads_into_instruments(migrated: psycopg.Connection[Any]) -> None:
+    """Every row of config/universe.csv satisfies the instruments constraints."""
+    import csv
+
+    from .conftest import REPO_ROOT
+
+    with (REPO_ROOT / "config" / "universe.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 31
+    assert len({(r["source"], r["ticker"]) for r in rows}) == 31
+
+    migrated.cursor().executemany(
+        "INSERT INTO instruments (source, ticker, source_id, name, asset_class, "
+        "instrument_type, quote_type, return_type, currency, multiplier) "
+        "VALUES (%(source)s, %(ticker)s, %(source_id)s, %(name)s, %(asset_class)s, "
+        "%(instrument_type)s, %(quote_type)s, %(return_type)s, %(currency)s, %(multiplier)s)",
+        rows,
+    )
+    counts = dict(
+        migrated.execute(
+            "SELECT asset_class, count(*) FROM instruments GROUP BY asset_class"
+        ).fetchall()
+    )
+    assert counts == {"rates": 11, "fx": 12, "commodity": 8}
+    assert migrated.execute(
+        "SELECT count(*) FROM instruments WHERE quote_type = 'yield' AND return_type <> 'absolute'"
+    ).fetchone() == (0,)
+
+
+def test_return_type_and_instrument_type_vocab(migrated: psycopg.Connection[Any]) -> None:
+    with pytest.raises(CheckViolation):
+        migrated.execute(
+            INSERT_INSTRUMENT, ("eia", "X", "X", "bad type", "commodity", "spot", "USD")
+        )
+    with pytest.raises(CheckViolation):
+        migrated.execute(
+            "INSERT INTO instruments (source, ticker, source_id, name, asset_class, "
+            "instrument_type, currency, return_type) "
+            "VALUES ('eia', 'Y', 'Y', 'bad return', 'commodity', 'commodity_spot', 'USD', 'simple')"
+        )
+
+
+def test_headline_view_guards_zero_portfolio_value(migrated: psycopg.Connection[Any]) -> None:
+    run = _insert_run(migrated, portfolio_value=0.0)
+    migrated.execute(INSERT_MEASURE, (run, "var", 0.99, "portfolio", "", 50_000.0))
+    row = migrated.execute(
+        "SELECT var_99, var_99_frac FROM v_risk_headline WHERE run_id = %s", (run,)
+    ).fetchone()
+    assert row == (50_000.0, None)

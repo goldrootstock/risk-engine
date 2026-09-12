@@ -1,0 +1,16 @@
+# Named sample windows / universe subsets for the return builder (design note 02 §3-1).
+# The ETL always loads full history; these sets are calculation-time choices and the
+# chosen set name is recorded in risk_runs.params.universe.
+
+[default]
+start = 2006-02-09          # 30-year Treasury reissued; all 31 series available from here
+exclude = []
+
+[from_1999]
+start = 1999-01-04          # euro launch; drops series that start later or have gaps
+exclude = ["UST_1M", "UST_30Y", "EURCNY"]
+
+[rates_energy_1990]
+start = 1990-04-02          # Gulf Coast jet fuel starts; rates + energy only, no FX
+include = ["UST_3M", "UST_6M", "UST_1Y", "UST_2Y", "UST_3Y", "UST_5Y", "UST_7Y", "UST_10Y",
+           "WTI", "BRENT", "GASOLINE_NYH", "GASOLINE_USGC", "HEATOIL_NYH", "JET_USGC"]
