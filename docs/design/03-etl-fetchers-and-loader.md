@@ -219,12 +219,13 @@ status                       # 계열별 first/last price_date, 행 수, 마지�
 [
   {"level": "warning", "code": "nonpositive_price", "detail": "close <= 0 on absolute series",
    "price_date": "2020-04-20", "value": -36.98, "threshold": null},
-  {"level": "warning", "code": "jump", "detail": "|dP| 55.29 > 10.0 USD/bbl",
-   "price_date": "2020-04-20", "value": -55.29, "threshold": 10.0}
+  {"level": "warning", "code": "jump", "detail": "|d| 55.29 units > 10 over 3 day(s) since 2020-04-17",
+   "price_date": "2020-04-20", "value": -55.29, "threshold": 10.0,
+   "prev_date": "2020-04-17", "gap_days": 3}
 ]
 ```
 
-키는 항상 6개(`level`·`code`·`detail`·`price_date`·`value`·`threshold`), 해당 없으면 `null`. `code` 는 `contract.FindingCode` 의 닫힌 어휘. 조회 예: `SELECT * FROM etl_runs, jsonb_array_elements(findings) f WHERE f->>'code' = 'jump'`.
+키는 항상 8개(`level`·`code`·`detail`·`price_date`·`value`·`threshold`·`prev_date`·`gap_days`), 해당 없으면 `null`. `prev_date`·`gap_days` 는 2026-09-13 추가(JK): 휴일이나 결측을 건너뛴 변화가 하루 점프로 읽히지 않게 한다. 임계값은 경과 일수로 스케일하지 않는다. `code` 는 `contract.FindingCode` 의 닫힌 어휘. 조회 예: `SELECT * FROM etl_runs, jsonb_array_elements(findings) f WHERE f->>'code' = 'jump'`.
 
 ## 13. sync 1회가 받는 양과 캐시 성장 — 재계산 (JK 전제, 실측 2026-09-13)
 

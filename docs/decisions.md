@@ -39,3 +39,20 @@
 | 컨벡시티 | 미포함 | `pnl.pnl_matrix` | [계산] 10Y·10 bp: ½·C·Δy² ≈ 0.5×80×10⁻⁶ = 4×10⁻⁵ vs D·Δy ≈ 8×10⁻⁴ → 5 % 미만. 1일 VaR 지평에서 무시 | 포함: 스트레스 100 bp 에서 ≈ 5 % 차이 → 스트레스 노트에서 재검토 | 큰 금리 충격의 손익 비대칭 |
 | 만기 매핑 | 티커 접미사 파싱 (`UST_1M`→1/12, `UST_10Y`→10) | `pnl.maturity_years` | 이름 규칙이지 설정값이 아니다 | 설정 파일: 티커와 중복 | — |
 | 표본 집합 | `default` 2006-02-09~ 31계열 / `from_1999` 28계열 / `rates_energy_1990` 14계열 | `config/universes.toml` | 노트 02 §3-1 (JK 승인) | — | 관측 수, 스트레스 창 포함 여부, 팩터 수 |
+
+## 3. FHS · Parametric · Monte Carlo (노트 05)
+
+| 이름 | 값 | 쓰이는 곳 | 근거 | 검토한 대안과 기각 이유 | 바꾸면 달라지는 것 |
+|---|---|---|---|---|---|
+| EWMA λ | 0.94 | `volatility.ewma_variance`, `risk_params.toml [fhs].lambda` | [출처] RiskMetrics Technical Document (1996) §5.3 — 일별 데이터 최적 감쇠 | 0.97(월별용): 반응이 늦어 2020-03 같은 레짐 전환에서 초과 급증. GARCH: 계열별 MLE 로 대체 가능(`--vol garch`) — 기본은 EWMA(파라미터 추정 없음, 실무 표준) | σ_T 반응 속도 → VaR 의 프로시클리컬리티와 백테스트 초과 군집 |
+| 잔차 풀 W | 500 영업일 | `[fhs].window_days` | Basel II 최소 250 [출처: BCBS 1996 §718(Lxxvi)]; Pritsker (2006) 의 250일 FHS 꼬리 표본 부족 지적; FRTB 내부모형·CCP 룩백(1~3년)의 중간 [임의, 250~1,000] | 250: 12.5 개 꼬리 표본으로 ES 97.5 % 추정 불안정. 1,000: 4년 전 사건이 오늘 σ 로 스케일돼 등장 | ES 의 안정성 vs 최신성. 민감도 표는 모델 문서 |
+| 워밍업 W₀ | 75 관측 | `[fhs].warmup_days` | [출처] RiskMetrics TD §5.3.2: λ=0.94 에서 가중치 99 % 가 최근 74 일 (ln 0.01 / ln 0.94 = 74.4). 초기값 = 첫 75 일 표본 2 차 모멘트 | 0: 첫 구간 σ 가 임의 초기값에 지배. 250: 5 % 표본 손실 | 백테스트·풀에서 제외되는 첫 구간 길이. 기본 집합에서 첫 FHS 가능일 = 2008-06-13 (575 관측 뒤) |
+| 잔차 풀 구성 | 자산별 σ 표준화 + **날짜별 공동 샘플** | `fhs.evaluate` | [출처] Barone-Adesi, Giannopoulos & Vosper (1999); Hull & White (1998) — FHS 원문의 정의 | 전체 풀 혼합·자산별 독립 추출: 자산 간 종속성 소실, 꼬리 특성 혼합(노트 05 §2-2) | 분산 효과의 크기 — 공동 vs 독립 샘플의 ES 차이가 곧 그것 |
+| α (VaR / ES) | 0.99 / 0.975 | `[measures]` | [출처] Basel II VaR 99 %; FRTB(BCBS 2019) ES 97.5 % | — | 꼬리 표본 수 (500 → 5 / 12.5) |
+| VaR 정의 | ⌈α·n⌉ 번째 손실 (n=500 → 5 번째로 큰 손실) | `measures.value_at_risk` | Basel 관행의 순서통계량 | 보간 분위수: 표본이 작을 때 두 값 사이 — 관행이 아님 | 이산성 |
+| ES 정의 | Acerbi & Tasche (2002) 분수 가중 | `measures.expected_shortfall` | [출처] Acerbi & Tasche, "On the coherence of expected shortfall" (2002) — 이산 표본에서 일관된(coherent) 정의 | 상위 k 개 단순 평균: (1−α)n 이 정수가 아니면 편향 | n=500 에서 12.5 번째 관측의 절반 가중 |
+| 스트레스 창 | 250 영업일, 현재 포지션에 ES 최대인 창 | `[measures].stressed_window_days`, `fhs.evaluate` | [출처] BCBS FRTB (2019) MAR33.5 — 12 개월 스트레스 기간 | 고정 창(2008-09~2009-08): 포트폴리오에 따라 최악이 다름 | `stressed_es` 와 창의 위치 (params 에 기록) |
+| MC 경로 · seed | 10,000 · 20260913 | `[montecarlo]` | [임의] 99 % 분위수 표준오차 ≈ 2 % 수준; backfill 비용 | 100,000: 정밀도 3 배, 비용 10 배 | MC 결과의 표본 오차. seed 고정으로 재현 |
+| Parametric 델타 | FX q·S, 에너지 q, 국채 −DV01 | `parametric.deltas` | 노트 04 §4 의 1 차 계수 | 완전 재가격: Parametric 의 정의에 어긋남 | Parametric 과 MC 의 차이 = 비선형성(FX 지수식) |
+| 포트폴리오 가치 | FX q·S + 에너지 q·P + 국채 액면 | `fhs.portfolio_value` | 국채는 par 채권 가정이라 액면 = 시가 | — | `v_risk_headline` 의 비율 분모 |
+| 초기 포트폴리오 MAIN | `config/positions_main.csv` 16 포지션, 2026-09-09 시가 ≈ 177 M USD | `positions` | [임의] 자산군 4 개에 롱·숏 혼합. 국채 롱 130 M, FX 롱·숏, 에너지 롱·숏 | — | 모든 리스크 수치 |
