@@ -51,6 +51,20 @@ pytest                          # tests; `db`-marked tests need DATABASE_URL
 pytest --cov                    # with coverage
 ```
 
+### ETL
+
+```bash
+python -m risk_engine.data.etl sync                 # full history of every series
+python -m risk_engine.data.etl sync --incremental   # from last loaded date minus 14 days
+python -m risk_engine.data.etl sync --dry-run       # fetch, cache, validate; write nothing
+python -m risk_engine.data.etl status               # per-series coverage (read-only)
+```
+
+Exit codes: `0` every series loaded · `1` configuration or infrastructure error (missing
+`DATABASE_URL`/`EIA_API_KEY`, database unreachable) · `2` the run finished but at least one
+series was skipped or failed — see the `etl_runs` table. A skipped series is never a silent
+success.
+
 `pytest` skips tests marked `db` unless `DATABASE_URL` is set. Export it (or `set -a; source .env; set +a`) to run them locally; CI always runs them against a service container.
 
 ## Conventions

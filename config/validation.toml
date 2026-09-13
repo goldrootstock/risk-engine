@@ -1,0 +1,21 @@
+# Day-over-day jump thresholds for the ETL validate() step (design note 03 §5).
+# Exceeding a threshold is a WARNING (recorded, never corrected); errors are structural
+# (missing column, duplicate date, future date, non-positive price on a log series).
+# The sha256 of this file is stored in etl_runs.params so every run records what it used.
+
+[defaults]
+max_abs_return    = 0.30    # log series (FX):  |P_t / P_{t-1} - 1|
+max_abs_change_bp = 100.0   # yield series:      |Δy| in basis points
+max_abs_change    = 10.0    # absolute series:   |ΔP| in the series' own units (fallback)
+
+# Absolute (energy spot) series, in their own units. Set roughly at 5-10x a large normal day
+# so that genuine dislocations surface for review without flooding the log.
+[tickers]
+WTI           = { max_abs_change = 10.0 }   # USD/bbl   (2020-04-20: -55.29 -> warning)
+BRENT         = { max_abs_change = 10.0 }   # USD/bbl
+GASOLINE_NYH  = { max_abs_change = 0.25 }   # USD/gal
+GASOLINE_USGC = { max_abs_change = 0.25 }   # USD/gal
+HEATOIL_NYH   = { max_abs_change = 0.25 }   # USD/gal
+JET_USGC      = { max_abs_change = 0.25 }   # USD/gal
+PROPANE_MB    = { max_abs_change = 0.15 }   # USD/gal
+HENRYHUB      = { max_abs_change = 2.0 }    # USD/MMBtu (Feb 2021 winter storm -> warnings)

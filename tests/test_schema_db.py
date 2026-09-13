@@ -52,7 +52,12 @@ def test_status_is_read_only_on_fresh_database(db_conn: psycopg.Connection[Any])
 
 def test_upgrade_creates_tables_and_is_idempotent(db_conn: psycopg.Connection[Any]) -> None:
     first = upgrade(db_conn, MIGRATIONS_DIR)
-    assert [m.label for m in first] == ["0001_init", "0002_risk_runs", "0003_instrument_vocab"]
+    assert [m.label for m in first] == [
+        "0001_init",
+        "0002_risk_runs",
+        "0003_instrument_vocab",
+        "0004_etl_runs",
+    ]
     expected = {
         "schema_migrations",
         "instruments",

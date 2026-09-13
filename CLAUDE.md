@@ -76,7 +76,9 @@ and kept as the record of *why*. The notes are part of the deliverable.
   Korean meaning in parentheses, e.g. FK(Foreign Key, 외래키), DDL(Data Definition
   Language, 데이터 정의 언어). Abbreviation only from the second use.
 - External facts (licence terms, data availability, job postings) carry a tag:
-  [확인] read at the source, [추정] indirect evidence, [미확인] not found.
+  [확인] read at the source, [추정] indirect evidence, [미확인] not found. A [확인] tag
+  states the date and how it was checked, e.g. `[확인 2026-09-13: HTTP 200, text/xml;
+  .zip/.csv 404]`, so that a wrong claim can be traced to its method.
 
 ## 5. AI-assisted development
 

@@ -41,6 +41,17 @@ CI #1(2026-09-12): 로컬 검사 루틴이 `ruff format .`(쓰기 모드)를 포
 | 7 | 시나리오 충격은 **버전 관리되는 설정 파일**(`config/stress_scenarios.toml`)에서만 온다. 코드는 파일을 읽어 `frozen` 객체로 만들고 파일의 sha256 을 `risk_runs.params.scenario_set` 에 기록한다. 충격을 인자로 받는 함수는 있어도 충격을 **계산해서 만드는** 함수는 없다(역사적 재현은 날짜 구간을 지정할 뿐 크기를 정하지 않는다) | `stress(portfolio: Positions, scenarios: ScenarioSet) -> StressReport` |
 | 8 | 플로어·버퍼·스트레스 창은 `config/margin_params.toml` 에서만 오고 sha256 이 실행에 기록된다. 커버리지 백테스트는 마진 실행 결과를 **읽기만** 하고 파라미터 객체를 받지 않는다 — 파라미터를 바꿔 다시 돌리려면 새 마진 실행을 만들어야 하고 그 실행은 다른 해시를 가진다 | `coverage_backtest(margin_runs: Sequence[MarginRun], realised: PnLSeries) -> CoverageReport` |
 
-공통 장치: 설정 파일 → 해시 → 실행 기록. 어떤 실행이 어떤 입력으로 나왔는지가 결과 행에 붙어 있으면, 사후 조정은 막히는 것이 아니라 **보이게** 된다. 그것이 규제 검사가 요구하는 형태다.
+### 3-1. 설정 값 고정 테스트 (pinned-config test) — 형태 확정 (2026-09-13)
+
+해시 기록은 "무엇을 썼는가"를 남기지만 "바꾸는 것을 어렵게" 하지는 않는다. 그래서 값 자체를 테스트에 한 번 더 박는다: `tests/test_config_pins.py` 가 설정 파일을 **직접 파싱**해(애플리케이션 로더를 거치지 않고) 테스트 파일 안의 기대 표와 비교한다. 파일의 값을 바꾸면 CI 가 깨지고, 고치려면 테스트의 표도 바꿔야 하므로 **변경이 반드시 두 파일로 한 커밋에 남는다.** 커밋 메시지가 이유를 담는 자리다.
+
+| 적용 | 설정 파일 | 테스트 표 | 시점 |
+|---|---|---|---|
+| ETL jump 임계값 (#1) | `config/validation.toml` | `EXPECTED_VALIDATION_THRESHOLDS` | 지금 |
+| EWMA λ · 관측 창 · 신뢰수준 (#5) | `config/risk_params.toml` | `EXPECTED_RISK_PARAMS` | 엔진 노트 |
+| 스트레스 충격 (#7) | `config/stress_scenarios.toml` | `EXPECTED_STRESS_SHOCKS` | 스트레스 노트 |
+| 마진 플로어 · 버퍼 · 스트레스 창 (#8) | `config/margin_params.toml` | `EXPECTED_MARGIN_PARAMS` | 마진 노트 |
+
+공통 장치: 설정 파일 → 해시 → 실행 기록 → **값 고정 테스트**. 어떤 실행이 어떤 입력으로 나왔는지가 결과 행에 붙어 있으면, 사후 조정은 막히는 것이 아니라 **보이게** 된다. 그것이 규제 검사가 요구하는 형태다.
 
 각 모듈 노트(02 ETL, 03 fetcher, 04 수익률, 이후 백테스트·마진)는 자기 행의 "지켜야 할 형태"를 인터페이스 시그니처로 옮긴다: 검증 함수는 `-> Report`, 변경 함수는 `-> Result` 에 변경 건수를 싣는다.

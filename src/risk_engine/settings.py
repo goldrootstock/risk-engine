@@ -23,10 +23,13 @@ class Settings:
     Attributes:
         database_url: PostgreSQL connection URL, e.g. ``postgresql://risk:risk@localhost:5432/risk``.
         migrations_dir: Directory containing ``NNNN_name.sql`` migration files.
+        eia_api_key: EIA API v2 key (``EIA_API_KEY``); ``None`` until the EIA source is used.
+            Never logged, never written to the cache.
     """
 
     database_url: str
     migrations_dir: Path = DEFAULT_MIGRATIONS_DIR
+    eia_api_key: str | None = None
 
 
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
@@ -54,4 +57,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         raise SettingsError("DATABASE_URL is not set (copy .env.example to .env)")
 
     migrations_dir = Path(env.get("MIGRATIONS_DIR", "").strip() or DEFAULT_MIGRATIONS_DIR)
-    return Settings(database_url=url, migrations_dir=migrations_dir)
+    eia_api_key = env.get("EIA_API_KEY", "").strip() or None
+    return Settings(database_url=url, migrations_dir=migrations_dir, eia_api_key=eia_api_key)
