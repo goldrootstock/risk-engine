@@ -55,6 +55,13 @@ and kept as the record of *why*. The notes are part of the deliverable.
 - `ruff` and `mypy` are pinned to exact versions in `pyproject.toml` so the local gate and CI
   cannot drift; bump them deliberately in their own commit.
 
+### Reporting after any change to files or the repository
+
+Every report that ends a task which wrote files or touched git closes with the verbatim
+output of `git log --oneline -3` and `git status --short`, not a summary. Gate results
+quote the last line of `pytest` as printed. The author works across several windows; the
+raw output is what lets them re-synchronise.
+
 ## 3. Data policy
 
 - Raw vendor data is never committed (`data/raw/` is git-ignored). The repository holds
@@ -93,7 +100,19 @@ This project is built with an AI coding assistant (Claude Code) under an explici
 Process: design note → author's approval (recorded in the note's status line) → code.
 Nothing goes into the schema or the model without an approved note.
 
-Per module, the code is written in four steps:
+**Mode change (2026-09-13).** From the ETL onwards the assistant implements P1-Risk end to
+end (ETL, return builder, FHS/parametric/MC ES-VaR, backtests, stress, model document,
+dashboard/API) and commits per module without per-step approval. The author's role becomes
+review and study: every module is accompanied by `docs/decisions.md` (each parameter with
+its source, rejected alternatives and sensitivity), `docs/walkthrough.md` (what the code
+does, why, where it can be wrong) and interview questions with model answers. The assistant
+still stops for schema changes, conflicts with an approved design decision, and data-licence
+questions. Parameters follow industry references (RiskMetrics, Basel, CPMI-IOSCO, published
+papers); a value without a source is labelled as arbitrary with its range. Results are never
+tuned after the fact: a failing backtest is reported as failing.
+
+The four-step pairing procedure below remains the reference for any module the author
+chooses to write themselves:
 
 1. The assistant adds the function signatures, docstrings and tests first. Bodies are left
    empty (`raise NotImplementedError`), so the tests fail.
