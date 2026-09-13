@@ -1,16 +1,10 @@
-"""RawCache tests on tmp_path. xfail (strict) until the bodies are written."""
+"""RawCache tests on tmp_path."""
 
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
-
 from risk_engine.data.etl.cache import RawCache, file_name
 from risk_engine.data.etl.contract import RawFile
-
-pytestmark = pytest.mark.xfail(
-    raises=NotImplementedError, strict=True, reason="skeleton: cache bodies not written yet"
-)
 
 T1 = datetime(2026, 9, 13, 10, 15, 0, tzinfo=UTC)
 T2 = datetime(2026, 9, 14, 10, 15, 0, tzinfo=UTC)

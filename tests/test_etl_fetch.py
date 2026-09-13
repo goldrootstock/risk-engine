@@ -1,4 +1,4 @@
-"""fetch() tests through httpx.MockTransport — no network. xfail (strict) until written."""
+"""fetch() tests through httpx.MockTransport — no network."""
 
 import io
 import json
@@ -11,10 +11,6 @@ import pytest
 from risk_engine.data.etl.sources.ecb import HIST_URL, SCOPE_ALL, EcbSource
 from risk_engine.data.etl.sources.eia import REDACTED, EiaSource, scrub_api_key
 from risk_engine.data.etl.sources.ustreasury import UsTreasurySource, years_to_fetch
-
-pytestmark = pytest.mark.xfail(
-    raises=NotImplementedError, strict=True, reason="skeleton: fetch bodies not written yet"
-)
 
 
 def _client(handler) -> httpx.Client:  # type: ignore[no-untyped-def]

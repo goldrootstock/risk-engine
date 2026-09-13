@@ -9,8 +9,7 @@ change is then always visible as a two-file diff with a commit message explainin
 import tomllib
 from pathlib import Path
 
-import pytest
-
+from risk_engine.data.etl.http import DEFAULT_RETRY_POLICY, RETRY_STATUSES
 from risk_engine.data.etl.validate import load_thresholds
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +26,20 @@ EXPECTED_VALIDATION_THRESHOLDS: dict[str, dict[str, float]] = {
     "HENRYHUB": {"max_abs_change": 2.0},
 }
 
+EXPECTED_RETRY_POLICY = {"attempts": 3, "backoff_seconds": 1.0, "timeout_seconds": 30.0}
+EXPECTED_RETRY_STATUSES = {429, 500, 502, 503, 504}
+
+
+def test_retry_policy_is_pinned() -> None:
+    """The retry schedule lives in one place (etl/http.py) and is changed only with this table."""
+    got = {
+        "attempts": DEFAULT_RETRY_POLICY.attempts,
+        "backoff_seconds": DEFAULT_RETRY_POLICY.backoff_seconds,
+        "timeout_seconds": DEFAULT_RETRY_POLICY.timeout_seconds,
+    }
+    assert got == EXPECTED_RETRY_POLICY
+    assert set(RETRY_STATUSES) == EXPECTED_RETRY_STATUSES
+
 
 def test_validation_thresholds_are_pinned() -> None:
     with (REPO_ROOT / "config" / "validation.toml").open("rb") as fh:
@@ -38,9 +51,6 @@ def test_validation_thresholds_are_pinned() -> None:
     )
 
 
-@pytest.mark.xfail(
-    raises=NotImplementedError, strict=True, reason="skeleton: load_thresholds not written yet"
-)
 def test_loader_returns_exactly_the_toml_values() -> None:
     """Guards the other half: validate() must take its thresholds from the file, not from code."""
     path = REPO_ROOT / "config" / "validation.toml"

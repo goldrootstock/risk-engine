@@ -1,4 +1,4 @@
-"""Loader tests against PostgreSQL (db marker). xfail (strict) until the bodies are written."""
+"""Loader tests against PostgreSQL (db marker)."""
 
 import datetime as dt
 from typing import Any
@@ -19,12 +19,7 @@ from risk_engine.data.migrate import upgrade
 
 from .conftest import MIGRATIONS_DIR, REPO_ROOT
 
-pytestmark = [
-    pytest.mark.db,
-    pytest.mark.xfail(
-        raises=NotImplementedError, strict=True, reason="skeleton: load bodies not written yet"
-    ),
-]
+pytestmark = pytest.mark.db
 
 
 @pytest.fixture

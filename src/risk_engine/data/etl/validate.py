@@ -8,12 +8,22 @@ report and writes ``etl_runs``.
 
 from __future__ import annotations
 
+import hashlib
+import tomllib
 from datetime import date
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
-from risk_engine.data.etl.contract import InstrumentSpec, JumpThresholds, Report
+from risk_engine.data.etl.contract import (
+    PRICE_COLUMNS,
+    Finding,
+    FindingLevel,
+    InstrumentSpec,
+    JumpThresholds,
+    Report,
+)
 
 DEFAULT_THRESHOLDS_PATH = Path("config/validation.toml")
 
@@ -23,12 +33,48 @@ def load_thresholds(ticker: str, path: Path = DEFAULT_THRESHOLDS_PATH) -> JumpTh
 
     Reads with :mod:`tomllib`. Missing ticker section means defaults only.
     """
-    raise NotImplementedError
+    with path.open("rb") as fh:
+        cfg = tomllib.load(fh)
+    merged = {**cfg["defaults"], **cfg.get("tickers", {}).get(ticker, {})}
+    return JumpThresholds(
+        max_abs_return=float(merged["max_abs_return"]),
+        max_abs_change_bp=float(merged["max_abs_change_bp"]),
+        max_abs_change=float(merged["max_abs_change"]),
+    )
 
 
 def thresholds_sha256(path: Path = DEFAULT_THRESHOLDS_PATH) -> str:
     """SHA-256 of the thresholds file, recorded in ``etl_runs.params`` for every run."""
-    raise NotImplementedError
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _structural(frame: pd.DataFrame, today: date) -> list[Finding]:
+    findings: list[Finding] = []
+    missing = [c for c in PRICE_COLUMNS if c not in frame.columns]
+    if missing:
+        findings.append(Finding("error", "missing_column", f"missing columns: {missing}"))
+        return findings
+    if not pd.api.types.is_datetime64_any_dtype(frame["price_date"]):
+        findings.append(Finding("error", "bad_dtype", "price_date is not datetime64"))
+        return findings
+    for col in ("close", "adj_close"):
+        if not pd.api.types.is_float_dtype(frame[col]):
+            findings.append(Finding("error", "bad_dtype", f"{col} is not float"))
+            return findings
+    if frame.empty:
+        findings.append(Finding("error", "empty_frame", "no rows"))
+        return findings
+    dupes = frame.loc[frame["price_date"].duplicated(), "price_date"]
+    for d in dupes.drop_duplicates():
+        findings.append(
+            Finding("error", "duplicate_date", "duplicate price_date", price_date=d.date())
+        )
+    future = frame.loc[frame["price_date"].dt.date > today, "price_date"]
+    for d in future:
+        findings.append(
+            Finding("error", "future_date", f"price_date after {today}", price_date=d.date())
+        )
+    return findings
 
 
 def validate(
@@ -59,4 +105,59 @@ def validate(
           (absolute, in the series' own units). Consecutive dates in the frame are compared;
           calendar gaps are not special-cased.
     """
-    raise NotImplementedError
+    today = today or date.today()
+    findings = _structural(frame, today)
+    if any(f.code in {"missing_column", "bad_dtype", "empty_frame"} for f in findings):
+        return Report(spec.source, spec.source_id, len(frame), None, None, tuple(findings))
+
+    ordered = frame.sort_values("price_date")  # a sorted copy; the input is not touched
+    dates = ordered["price_date"].dt.date.to_numpy()
+    close = ordered["close"].to_numpy(dtype="float64")
+
+    nonpositive_level: FindingLevel = "error" if spec.return_type == "log" else "warning"
+    for d, p in zip(dates[close <= 0], close[close <= 0], strict=True):
+        findings.append(
+            Finding(
+                nonpositive_level,
+                "nonpositive_price",
+                f"close <= 0 on {spec.return_type} series",
+                d,
+                float(p),
+            )
+        )
+
+    if len(close) > 1:
+        prev, curr, when = close[:-1], close[1:], dates[1:]
+        if spec.quote_type == "yield":
+            delta = (curr - prev) * 100.0  # percent -> basis points
+            mask = abs(delta) > thresholds.max_abs_change_bp
+            unit, limit = "bp", thresholds.max_abs_change_bp
+        elif spec.return_type == "absolute":
+            delta = curr - prev
+            mask = abs(delta) > thresholds.max_abs_change
+            unit, limit = "units", thresholds.max_abs_change
+        else:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                delta = curr / prev - 1.0  # inf/nan on a zero base: already an error above
+            mask = np.isfinite(delta) & (abs(delta) > thresholds.max_abs_return)
+            unit, limit = "return", thresholds.max_abs_return
+        for d, v in zip(when[mask], delta[mask], strict=True):
+            findings.append(
+                Finding(
+                    "warning",
+                    "jump",
+                    f"|d| {abs(v):.4g} {unit} > {limit:g}",
+                    d,
+                    float(v),
+                    float(limit),
+                )
+            )
+
+    return Report(
+        source=spec.source,
+        source_id=spec.source_id,
+        rows=len(frame),
+        first=dates[0],
+        last=dates[-1],
+        findings=tuple(findings),
+    )

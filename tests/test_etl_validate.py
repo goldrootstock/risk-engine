@@ -13,9 +13,6 @@ from risk_engine.data.etl.validate import load_thresholds, thresholds_sha256, va
 FIXTURES = Path(__file__).parent / "fixtures" / "etl"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-pytestmark = pytest.mark.xfail(
-    raises=NotImplementedError, strict=True, reason="skeleton: validate bodies not written yet"
-)
 
 WTI = InstrumentSpec(1, "eia", "RWTC", "WTI", "price", "absolute")
 EURUSD = InstrumentSpec(2, "ecb", "USD", "EURUSD", "price", "log")

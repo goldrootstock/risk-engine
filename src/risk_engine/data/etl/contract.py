@@ -79,6 +79,12 @@ class Source(Protocol):
     Two methods, two responsibilities. ``fetch`` may use the network and must not parse;
     ``parse`` must not use the network. This lets the cache store bytes, lets fixtures test
     ``parse`` offline, and keeps every side effect in one function.
+
+    HTTP client lifetime: a source accepts an optional ``httpx.Client`` at construction. An
+    injected client is borrowed for every ``fetch`` and never closed by the source; without
+    one, ``fetch`` opens a client for the duration of that single call and closes it on
+    exit (``risk_engine.data.etl.http.client_for``). Retries follow
+    ``risk_engine.data.etl.http.fetch_with_retry``; sources do not write their own loops.
     """
 
     name: str

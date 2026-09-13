@@ -27,6 +27,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     for item in items:
         if "db" in item.keywords:
             item.add_marker(skip)
+    # ``network`` tests skip themselves via skipif(RUN_NETWORK_TESTS != "1").
 
 
 @pytest.fixture

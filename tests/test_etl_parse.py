@@ -1,4 +1,4 @@
-"""Fixture-based parse tests. Bodies are the author's; until then these xfail (strict)."""
+"""Fixture-based parse tests (no network)."""
 
 import io
 import json
@@ -16,10 +16,6 @@ from risk_engine.data.etl.sources.ustreasury import UsTreasurySource
 
 FIXTURES = Path(__file__).parent / "fixtures" / "etl"
 FETCHED_AT = datetime(2026, 9, 12, 10, 0, tzinfo=UTC)
-
-pytestmark = pytest.mark.xfail(
-    raises=NotImplementedError, strict=True, reason="skeleton: parse bodies not written yet"
-)
 
 
 def _assert_contract(frame: pd.DataFrame) -> None:
@@ -73,8 +69,17 @@ def test_parse_eia_strings_and_negative_value() -> None:
     raw = RawFile("eia", "RWTC", "https://api.eia.gov/v2/petroleum/pri/spt/data/", body, FETCHED_AT)
     frame = EiaSource(api_key="x").parse(raw)
     _assert_contract(frame)
-    assert len(frame) == json.loads(body)["response"]["total"] == 15
+    assert len(frame) == int(json.loads(body)["response"]["total"]) == 15  # total is a string
     by_date = frame.set_index("price_date")["close"]
     assert by_date[pd.Timestamp("2020-04-20")] == pytest.approx(-36.98)
     assert by_date[pd.Timestamp("2020-04-28")] == pytest.approx(12.4)  # "12.4" string
     assert set(frame["source_id"]) == {"RWTC"}
+
+
+def test_parse_eia_drops_null_values() -> None:
+    body = json.loads((FIXTURES / "eia_rwtc_2020-04.json").read_bytes())
+    body["response"]["data"].append({"period": "2020-05-04", "series": "RWTC", "value": None})
+    raw = RawFile("eia", "RWTC", "https://api.eia.gov/x", json.dumps(body).encode(), FETCHED_AT)
+    frame = EiaSource(api_key="x").parse(raw)
+    assert len(frame) == 15  # the null row contributes nothing
+    assert frame["close"].notna().all()

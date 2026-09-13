@@ -18,13 +18,16 @@ and constants only.
 
 from __future__ import annotations
 
+import io
+import zipfile
 from collections.abc import Sequence
-from datetime import date
+from datetime import UTC, date, datetime
 
 import httpx
 import pandas as pd
 
-from risk_engine.data.etl.contract import RawFile
+from risk_engine.data.etl.contract import PRICE_COLUMNS, RawFile
+from risk_engine.data.etl.http import client_for, fetch_with_retry
 
 HIST_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.zip"
 #: Scope used in the cache: one file covers every currency.
@@ -45,8 +48,9 @@ class EcbSource:
 
         Args:
             client: Injected HTTP client, mainly ``httpx.Client(transport=MockTransport(...))``
-                in tests. ``None`` means a default client with a 30 s timeout is created per
-                ``fetch`` call.
+                in tests. It is borrowed, never closed here. ``None`` means each ``fetch``
+                call opens its own client via ``etl.http.client_for`` and closes it on
+                exit, so no connection outlives the call.
         """
         self._client = client
 
@@ -63,9 +67,16 @@ class EcbSource:
         when the body does not start with :data:`ZIP_MAGIC` (the ECB serves an HTML error
         page with status 404 for unknown paths; it must never be cached as data).
 
-        Retries: 5xx and timeouts up to 3 times with exponential back-off; 4xx is final.
+        Retries: ``etl.http.fetch_with_retry`` — 5xx/429/timeouts up to 3 attempts with
+        exponential back-off; other 4xx are final. No retry loop is written here.
         """
-        raise NotImplementedError
+        fetched_at = datetime.now(UTC)
+        with client_for(self._client) as client:
+            response = fetch_with_retry(client, HIST_URL)
+        content = response.content
+        if not content.startswith(ZIP_MAGIC):
+            raise ValueError(f"ECB response is not a zip archive ({len(content)} bytes)")
+        return [RawFile(self.name, SCOPE_ALL, HIST_URL, content, fetched_at)]
 
     def parse(self, raw: RawFile) -> pd.DataFrame:
         """Unzip ``CSV_MEMBER`` and return a long frame with :data:`~contract.PRICE_COLUMNS`.
@@ -76,4 +87,26 @@ class EcbSource:
         ascending by ``(source_id, price_date)`` with a fresh ``RangeIndex`` (0..n-1), as
         required by ``contract.Source.parse``.
         """
-        raise NotImplementedError
+        with zipfile.ZipFile(io.BytesIO(raw.content)) as zf:
+            csv_bytes = zf.read(CSV_MEMBER)
+        wide = pd.read_csv(io.BytesIO(csv_bytes), na_values=["N/A"])
+        wide = wide.loc[:, [c for c in wide.columns if not str(c).startswith("Unnamed")]]
+        long = wide.melt(id_vars="Date", var_name="source_id", value_name="close").dropna(
+            subset=["close"]
+        )
+        return _to_contract(long, date_format="%Y-%m-%d")
+
+
+def _to_contract(long: pd.DataFrame, *, date_format: str) -> pd.DataFrame:
+    """Shared tail of the CSV parsers: types, ``adj_close``/``volume``, ordering, index."""
+    out = pd.DataFrame(
+        {
+            "source_id": long["source_id"].astype("string"),
+            "price_date": pd.to_datetime(long["Date"], format=date_format).astype("datetime64[ns]"),
+            "close": long["close"].astype("float64"),
+        }
+    )
+    out["adj_close"] = out["close"]
+    out["volume"] = pd.array([pd.NA] * len(out), dtype="Int64")
+    out = out.sort_values(["source_id", "price_date"], kind="mergesort").reset_index(drop=True)
+    return out[list(PRICE_COLUMNS)]

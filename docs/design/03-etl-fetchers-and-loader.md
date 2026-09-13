@@ -1,6 +1,6 @@
 # 설계 노트 03 — ETL fetcher · 로더 · CLI
 
-- 상태: 노트 승인(2026-09-12) → §11 6개 항목 **승인됨(조건 반영, 2026-09-13)**. 조건과 그 반영은 §14, 추가 결정은 §12·§13
+- 상태: 승인(2026-09-12/13) → **구현 완료 (2026-09-13)**. 31계열 전체 이력 적재 확인: ECB 83,493행 · 재무부 96,145행 · EIA 75,792행, 스킵 0. 실전에서 발견한 정정 4건은 `docs/walkthrough.md` §1
 - 전제: 노트 02(소스·정책·유니버스 31계열·전체 이력 적재) 확정, 노트 00(검증은 읽기 전용) 적용, 0003 마이그레이션(`source_id`·`return_type`·어휘) 적용
 - 역할: 이 노트와 픽스처·테스트 뼈대 = Claude / fetcher 3개·로더·CLI 구현 = JK / 리뷰 = Claude
 - 번호: 수익률 빌더 노트는 **04** 로 밀린다
@@ -66,7 +66,8 @@ InstrumentSpec(instrument_id, source, source_id, ticker, quote_type, return_type
 | 증분 | 전체 zip 을 매번 받는다(≈1 MB). 증분 개념 없음 | `start` 의 연도부터 현재 연도까지만 | `start` 파라미터 지원 |
 | 재시도 | HTTP 5xx·타임아웃에 지수 백오프 3회. 4xx 는 즉시 실패 | 동일 | 동일 + 429 (rate limit) 는 대기 후 재시도 |
 | 고시 시각 (달력 노트용) | 16:00 CET 경 | NY 15:30 [추정] | 일중 평가 |
-| **sync 1회가 받는 범위** | **항상 전체 이력** (639 KB zip). XML 형식의 90일 파일(`eurofxref-hist-90d.xml`)은 존재한다 [확인 2026-09-13: HTTP 200, `text/xml`; `.zip`·`.csv` 확장자는 404]. CSV·zip 파서 하나로 유지하기 위해 채택하지 않고 매 sync마다 전체 zip을 받는다. 대가는 연 약 160 MB이며, 1 GB 재검토 시 첫 후보가 이 XML 경로다. 당일 파일(`eurofxref.zip`, 395 B)은 하루치뿐이라 결측일이 생기면 못 메운다 | **증분**: `start − 14일` 이 걸치는 연도 파일부터 현재 연도까지 (연도 파일 ≤ 15 KB). 첫 실행은 1990~ 전부 | **증분**: `start − 14일` 부터 `end` 까지 (계열당 5,000행 페이지). 첫 실행은 전체 이력 (WTI 10,245행 = 2페이지 2.8 MB, 행당 274 B [확인]) |
+| **sync 1회가 받는 범위** | **항상 전체 이력** (639 KB zip). XML 형식의 90일 파일(`eurofxref-hist-90d.xml`)은 존재한다 [확인 2026-09-13: HTTP 200, `text/xml`; `.zip`·`.csv` 확장자는 404]. CSV·zip 파서 하나로 유지하기 위해 채택하지 않고 매 sync마다 전체 zip을 받는다. 대가는 연 약 160 MB이며, 1 GB 재검토 시 첫 후보가 이 XML 경로다. 당일 파일(`eurofxref.zip`, 395 B)은 하루치뿐이라 결측일이 생기면 못 메운다 | **증분**: `start` 가 걸치는 연도 파일부터 현재 연도까지 (연도 파일 ≤ 15 KB). 첫 실행은 1990~ 전부 | **증분**: `start` 부터 `end` 까지 (계열당 5,000행 페이지). 첫 실행은 전체 이력 (WTI 10,245행 = 2페이지 2.8 MB, 행당 274 B [확인]) |
+| **절단 없음 — 전체 upsert (결정 2026-09-13)** | 오케스트레이터는 parse 결과를 `start` 이후로 **자르지 않는다.** 유니버스 12 통화만 고른 뒤(≈ 7,000일 × 12 ≈ 84,000행; 파일 자체는 32 통화 ≈ 21만 행) 전부 validate·upsert 한다. 매 sync 가 전체 재검증이 되어 벤더 정정을 전부 잡고, `IS DISTINCT FROM` 가드 덕에 쓰기는 정정 행만 발생한다. `etl_runs.rows_unchanged` 가 매일 ≈ 84,000 인 것은 **의도**다 — 그 숫자가 곧 "전체를 다시 봤다"는 증거 | `start − 14일` 이후만 받으므로 절단 불필요 | 동일 |
 | **응답 검사** (404 HTML 을 데이터로 캐시하지 않기 위해) | HTTP 2xx + 본문이 `PK` 로 시작 | HTTP 2xx + 본문이 `Date` 로 시작 | HTTP 2xx + JSON 파싱 가능 + `response.data` 존재 |
 
 **ECB 를 첫 번째로 권고**하는 이유: 요청 1개·키 없음·페이지네이션 없음이라 fetcher 골격(fetch/parse/cache/validate/load/CLI)을 **가장 짧은 경로로 끝까지** 관통한다. 그러면서도 결측(`N/A`)·내림차순·꼬리 콤마·12 계열 동시 처리라는 실제 문제가 다 들어 있어 골격의 설계 결함이 바로 드러난다. 두 번째는 Treasury(연도 루프·열 구성 변화·yield 경로), 마지막이 EIA(키·JSON·페이지네이션·음수). 국채가 팩터 구조의 핵심이지만 "먼저 만들 것"은 엔지니어링 리스크가 낮은 쪽이다.
@@ -143,7 +144,7 @@ status                       # 계열별 first/last price_date, 행 수, 마지�
 - 로그 한 줄 형식: `INFO etl: ecb/JPY 1999-01-04..2026-09-11 rows=7088 inserted=7088 updated=0 unchanged=0 findings=0 elapsed=0.4s`
 - **exit code** (JK #6, `--help` 와 README 에도): `0` 전 series 적재 · `1` 설정·인프라 오류(DATABASE_URL·EIA_API_KEY 누락, DB 연결 실패, 미지원 소스) · `2` 실행은 끝났지만 스킵·실패 series 가 1건 이상. 조용한 성공 금지. `--dry-run` 도 error 발견 시 2.
 - `--dry-run` 은 fetch·캐시 쓰기·parse·validate 까지 하고 DB 는 건드리지 않는다. 캐시 쓰기는 "받은 사실"의 기록이라 노트 00 과 충돌하지 않지만 디스크에 쓴다는 점은 여기 명시한다.
-- `--incremental` = 각 계열의 `max(price_date) − 14일` 부터. 증분 단위는 소스별 §3 표.
+- `--incremental` = 소스 안 계열들의 `min(max(price_date)) − 14일` 부터. **겹침 창은 오케스트레이터가 한 번만 적용**하고 소스는 `start` 를 그대로 쓴다(첫 실전 실행에서 이중 적용 28일을 발견해 정정, 2026-09-13). 증분 단위는 소스별 §3 표.
 
 ## 8. 테스트 (Claude 가 뼈대 제공, JK 가 채움)
 
@@ -251,3 +252,21 @@ status                       # 계열별 first/last price_date, 행 수, 마지�
 | 7 | jump 임계값 return_type 분기, 2020-04-20 은 warning | §5, `config/validation.toml`, `test_etl_validate.py` |
 | 10 | `fetch -> Sequence[RawFile]`, `parse(raw) -> long frame` | §2, `contract.py` |
 | — | 구현 순서 ECB → 재무부 → EIA, ECB 뒤 재무부 시그니처 점검 게이트 | §3 (재무부 시그니처는 이미 초안, 게이트는 ECB 완료 시 재확인) |
+
+## 15. 공유 HTTP 헬퍼 — 재시도와 클라이언트 수명 (JK 질문 1·2, 2026-09-13)
+
+**재시도는 소스마다 쓰지 않는다.** `etl/http.py` 의 `fetch_with_retry(client, url, *, params, policy, sleep)` 하나에 모은다. 이유: (1) 같은 루프를 세 소스에 복붙하게 되고, (2) 횟수·대기가 한 곳에 있어야 값 고정 테스트를 걸 수 있다. `httpx.HTTPTransport(retries=N)` 은 연결 실패만 재시도하고 5xx 는 재시도하지 않으므로 기본 기능으로는 요구를 못 맞춘다 [확인 2026-09-13: httpx 문서 "retries … connection failures"].
+
+| 항목 | 값 | 고정 위치 |
+|---|---|---|
+| 재시도 대상 | 5xx(500·502·503·504)·429·타임아웃·전송 오류 | `RETRY_STATUSES` |
+| 즉시 실패 | 그 외 4xx (`HTTPStatusError`) | |
+| 시도 횟수 | 3 (첫 시도 포함) | `RetryPolicy.attempts` |
+| 대기 | 1 s, 2 s (지수) — `sleep` 인자로 주입 가능해 테스트가 스케줄을 캡처 | `RetryPolicy.backoff_seconds` |
+| 타임아웃 | 30 s | `RetryPolicy.timeout_seconds` |
+| 소진 시 | `RetryExhaustedError` (마지막 오류를 `from` 으로) | |
+| 로그 | URL 의 경로만. 쿼리스트링(EIA 키) 금지 | |
+
+`RetryPolicy` 는 frozen — 실패를 보고 안에서 늘릴 수 없다(노트 00 §3). 값은 `tests/test_config_pins.py::test_retry_policy_is_pinned` 가 고정한다. 이 헬퍼의 본문은 보일러플레이트라 JK 의 작성 범위에서 제외한다(Claude 가 채운다).
+
+**클라이언트 수명**: 소스는 생성자에서 `httpx.Client | None` 을 받는다. 주입된 클라이언트는 **빌려 쓰고 닫지 않는다**(소유자는 호출자 — 테스트, 또는 나중에 클라이언트 하나를 공유할 오케스트레이터). 주입이 없으면 `fetch` 호출 하나 동안만 `etl.http.client_for(None)` 이 클라이언트를 만들고 `with` 로 닫는다 — 예외가 나도 닫힌다. 재무부(연 37 요청)·EIA(16 요청)도 한 `fetch` 안에서 같은 클라이언트를 쓴다. `__init__` 에서 만들어 인스턴스에 보관하는 안은 소스 객체에 `close()` 의무가 생겨 버렸다. 계약은 `contract.Source` docstring 에 있다.
