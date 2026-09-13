@@ -24,10 +24,10 @@
 
 | 소스 | 자산군 | (i) 자동 수집 | 원본 재배포 | (ii) 파생 결과 공개 | (iii) 비용·키 | 근거 | 판정 |
 |---|---|---|---|---|---|---|---|
-| **U.S. Treasury** — Daily Par Yield Curve (home.treasury.gov) | rates | 허용 (CSV·XML 공식 제공) | 공공저작물 | 허용 | 무료·키 없음 | [확인] 페이지에 CSV/XML 링크, 저작권 고지 없음. 미 연방정부 저작물은 17 U.S.C. §105 로 public domain | **채택** |
+| **U.S. Treasury** — Daily Par Yield Curve (home.treasury.gov) | rates | 약관상 허용이나 **WAF 가 비브라우저 UA 차단** [확인 2026-09-13] | 공공저작물 | 허용 | 무료·키 없음 | [확인] 페이지에 CSV/XML 링크, 저작권 고지 없음. 미 연방정부 저작물은 17 U.S.C. §105 로 public domain | **채택했다가 교체 (2026-09-13)** — 브라우저 형식 UA 로는 되지만 공개 저장소에 우회를 남기지 않기로 함. 동일 계보(H.15)의 FRED 로 |
 | **ECB** — Euro foreign exchange reference rates | fx | 허용 (CSV zip 공식 제공) | **허용, 출처 표기 조건** | 허용 | 무료·키 없음 | [확인] "distributed or reproduced … the ECB must be cited as the source" | **채택** |
 | **EIA** — WTI · Brent · Henry Hub 일별 현물 | commodity | 허용 (API v2, 무료 키 / CSV) | 공공저작물 | 허용 | 무료 키 | [확인] "U.S. government publications are in the public domain". 단 제3자 제공 자료 예외 명시 → 위 3개 계열은 EIA 자체 계열 [추정] | **채택** (spot 이라 선물 롤 없음) |
-| FRED (St. Louis Fed) | 위 셋의 편의 API | 허용 (API) | **금지** — "may not be … distributed … republished … without prior written permission" | 개인 이용 한정 | 무료 키 | [확인] FRED 약관. 개별 계열(DGS10)은 "Public Domain: Citation Requested" 표시 [확인] — 공공저작물이지만 FRED 경유 취득분은 FRED 약관을 탄다 | **불채택** — 같은 데이터를 원천 기관에서 직접 받는다 |
+| FRED (St. Louis Fed) | H.15 국채 수익률 등 | 허용 (공식 API, 무료 키) | FRED 자체 콘텐츠 재배포 금지 — 그러나 P1 은 원본을 재배포하지 않는다 | 개별 계열 DGSxx 는 "Public Domain: Citation Requested"(연준 H.15) [확인 2026-09-12] | 무료 키 | [확인] FRED 약관 + 계열 페이지 | **채택 (2026-09-13, JK 결정)** — 국채 수익률 11계열. 처음엔 원천 기관 직접 수집을 택했으나 재무부 WAF 문제(아래)로 교체 |
 | Yahoo Finance (`yfinance`) | equity · etf · futures | **금지** — "access or collect data … using any automated means … for any purpose without our express, prior permission" | 금지 | 비상업 한정 | 무료 | [확인] Yahoo ToS. `yfinance` 자체도 "refer to Yahoo's terms for your rights to use the data" | **제외** — 수집 단계에서 이미 위반 |
 | Massive (구 Polygon) 무료 플랜 | equity | 허용 | 이전·공유 금지 | 개인·비상업 한정, 파생물 조항 없음 | 무료 키 | [확인] individuals ToS: "solely for your own personal, non-commercial, and non-business purposes" | **보류** — 공개 포트폴리오가 "personal" 인지 약관이 답하지 않음 |
 | Databento | equity · etf · futures(CME) | 허용 (공식 API) | [미확인] — 약관·라이선스 페이지가 열리지 않음 | [미확인] | 신규 $125 크레딧(6개월) 후 GB 당 과금. 일별 OHLCV 20종목 × 10년은 수 MB 수준 [추정] | [확인] pricing 페이지. 블로그: "historical (T+1) 데이터는 시장 라이선스 불필요" [추정 — 자사 주장] | **후보** — JK 가 Terms 원문을 열어 (ii) 를 확인한 뒤 |
@@ -68,14 +68,14 @@
 
 JK 지시(2026-09-12): 10계열은 얇다. 같은 소스가 공표하는 계열로 25~30 을 채우고, 국채 곡선 전체를 넣어 level·slope·curvature 팩터 구조를 만든다.
 
-**국채 — 11 만기** (source `ustreasury`, quote_type `yield`, USD). 아카이브 CSV 는 1990-01-02 부터 [확인].
+**국채 — 11 만기** (source `fred`, quote_type `yield`, USD). 2026-09-13 부터 FRED `DGS*` 계열(연준 H.15, T+1). 아래 시작일은 재무부 아카이브 기준이며 FRED 이력은 더 길다(DGS10 1962-01-02~, DGS3MO 1981-09-01~ [확인 2026-09-13]). 대조 결과 겹치는 날짜 전부 일치.
 
 | ticker | 원천 열 | 시작 | 비고 |
 |---|---|---|---|
-| UST_1M | 1 Mo | 2001-07 [추정 — 2001년 파일 안에 존재 확인, 정확한 첫 날은 ETL 첫 실행에서 기록] | |
-| UST_3M · UST_6M · UST_1Y · UST_2Y · UST_3Y · UST_5Y · UST_7Y · UST_10Y | 3 Mo … 10 Yr | 1990-01-02 [확인] | 1990 파일에 9개 열 전부 값 있음 |
-| UST_20Y | 20 Yr | 1993-10-01 [확인 — 재무부 페이지 주석] | 1986 말 중단 후 재개 |
-| UST_30Y | 30 Yr | 1990-01-02 [확인], **2002-02-18 ~ 2006-02-09 공백** [확인 — 재무부 페이지 주석] | 30년물 발행 중단 기간 |
+| UST_1M | DGS1MO (구 `1 Mo`) | 2001-07 [추정 — 2001년 파일 안에 존재 확인, 정확한 첫 날은 ETL 첫 실행에서 기록] | |
+| UST_3M … UST_10Y | DGS3MO · DGS6MO · DGS1 · DGS2 · DGS3 · DGS5 · DGS7 · DGS10 | 1990-01-02 [확인] | 1990 파일에 9개 열 전부 값 있음 |
+| UST_20Y | DGS20 | 1993-10-01 [확인 — 재무부 페이지 주석] | 1986 말 중단 후 재개 |
+| UST_30Y | DGS30 | 1990-01-02 [확인], **2002-02-18 ~ 2006-02-09 공백** [확인 — 재무부 페이지 주석] | 30년물 발행 중단 기간 |
 | 제외 | 1.5 Mo · 2 Mo(2018-10-16~) · 4 Mo(2022-10-19~) | | 이력이 짧아 intersection 시작일을 끌어올린다 |
 
 **FX — 12 통화** (source `ecb`, quote_type `price`). ECB 는 32개 통화를 16:00 CET 경 고시 [확인]. DB 에는 ECB 원계열(1 EUR = x CCY)을 그대로 넣고 USD 크로스는 수익률 빌더가 계산한다.

@@ -54,7 +54,7 @@ InstrumentSpec(instrument_id, source, source_id, ticker, quote_type, return_type
 
 ## 3. 소스별 fetcher
 
-| | ECB | U.S. Treasury | EIA |
+| | ECB | FRED (2026-09-13 부터; 재무부 CSV 는 §16) | EIA |
 |---|---|---|---|
 | 엔드포인트 | `https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.zip` — **전체 이력이 zip 하나** | `…/daily-treasury-rates.csv/{YEAR}/all?type=daily_treasury_yield_curve&field_tdr_date_value={YEAR}&page&_format=csv` — **연도별 1파일**, 1990~현재 루프 | `https://api.eia.gov/v2/petroleum/pri/spt/data/?api_key=…&frequency=daily&data[0]=value&facets[series][]={SERIES}&sort[0][column]=period&sort[0][direction]=desc&offset=N&length=5000` (천연가스는 `/v2/natural-gas/pri/fut/data/`) — **JSON, 5,000행 페이지네이션** |
 | 인증 | 없음 | 없음 | 무료 API 키 (`EIA_API_KEY` 환경변수, `.env`) |
@@ -270,3 +270,21 @@ status                       # 계열별 first/last price_date, 행 수, 마지�
 `RetryPolicy` 는 frozen — 실패를 보고 안에서 늘릴 수 없다(노트 00 §3). 값은 `tests/test_config_pins.py::test_retry_policy_is_pinned` 가 고정한다. 이 헬퍼의 본문은 보일러플레이트라 JK 의 작성 범위에서 제외한다(Claude 가 채운다).
 
 **클라이언트 수명**: 소스는 생성자에서 `httpx.Client | None` 을 받는다. 주입된 클라이언트는 **빌려 쓰고 닫지 않는다**(소유자는 호출자 — 테스트, 또는 나중에 클라이언트 하나를 공유할 오케스트레이터). 주입이 없으면 `fetch` 호출 하나 동안만 `etl.http.client_for(None)` 이 클라이언트를 만들고 `with` 로 닫는다 — 예외가 나도 닫힌다. 재무부(연 37 요청)·EIA(16 요청)도 한 `fetch` 안에서 같은 클라이언트를 쓴다. `__init__` 에서 만들어 인스턴스에 보관하는 안은 소스 객체에 `close()` 의무가 생겨 버렸다. 계약은 `contract.Source` docstring 에 있다.
+
+## 16. 국채 소스 교체: 재무부 CSV → FRED (JK 결정 2026-09-13)
+
+**이유.** 첫 실전 sync 에서 home.treasury.gov 가 비브라우저 User-Agent 에 응답하지 않았다(6종 시험, `docs/decisions.md`). 브라우저 형식 문자열에 도구명을 넣으면 통과하지만, 공개 저장소에 WAF 우회를 남기지 않는다. 같은 계보(연준 H.15)를 FRED 가 공식 API 로 제공한다.
+
+| | FRED |
+|---|---|
+| 엔드포인트 | `GET https://api.stlouisfed.org/fred/series/observations?series_id=DGS10&api_key=…&file_type=json&limit=100000&sort_order=asc[&observation_start=…&observation_end=…]` |
+| 인증 | 무료 키 `FRED_API_KEY`, **쿼리 파라미터** (헤더 방식 없음 [미확인: 키 없이 시험 불가]) → URL 은 로그·예외·manifest 어디에도 쿼리스트링 없이 기록 |
+| 한 번의 fetch | 계열당 요청 1개 (limit 100,000 > 최장 계열 DGS1 16,158행) |
+| 형식 | `observations[].{date, value}`; 결측은 `"."` → 행 제거 |
+| 시작 | DGS1MO 2001-07-31, DGS3MO·DGS6MO 1981-09-01, DGS1·DGS3·DGS5·DGS10·DGS20 1962-01-02, DGS2 1976-06-01, DGS7 1969-07-01, DGS30 1977-02-15 [확인 2026-09-13] |
+| **지연** | H.15 를 **T+1** 로 반영 — 재무부 페이지보다 하루 늦다 (2026-09-13 대조: 재무부에만 2026-09-11 존재). 일별 배치가 D 에 D−1 까지 본다 |
+| 대조 | 재무부 적재분 96,145행과 날짜별 비교: **11계열 전부 불일치 0건**, 재무부에만 있는 날짜 = 최신 1일, FRED 에만 있는 날짜 = 1990 이전 이력 |
+
+**instrument_id 보존.** `upsert_instruments` 의 충돌 키가 `(source, ticker)` 라 universe.csv 의 source 를 `fred` 로 바꾸면 새 행이 생기고 96,145행이 고아가 된다. 그래서 **데이터 마이그레이션 `0005_rates_to_fred.sql`** 이 먼저 `UPDATE instruments SET source='fred', source_id=DGS…` 로 기존 행을 바꾼다(DDL 없음, `instrument_id` 불변, `etl_runs` 이력의 `source='ustreasury'` 는 그대로). 그 뒤 universe.csv 의 `(fred, UST_10Y)` 가 기존 행과 충돌해 갱신만 일어난다. 테스트 `test_0005_moves_rates_to_fred_keeping_instrument_ids`.
+
+**EIA 키 전달도 이 시점에 헤더로.** `X-Api-Key` 헤더를 받는다 [확인 2026-09-13]. 헤더로 보내도 응답이 키를 에코하므로 스크럽은 유지. `etl.http` 는 예외 메시지에 URL 경로만 넣는다.

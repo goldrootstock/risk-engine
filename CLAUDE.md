@@ -68,8 +68,8 @@ raw output is what lets them re-synchronise.
   code, the instrument universe (`config/universe.csv`), derived aggregates (risk numbers,
   backtest statistics, charts, model documents) and small test fixtures.
 - A source is used only if its terms allow automated collection and do not forbid publishing
-  derived results, and if anyone can re-download it for free. Current sources: U.S. Treasury
-  (par yield curve), ECB (euro reference rates), EIA (energy spot prices). Licence review and
+  derived results, and if anyone can re-download it for free. Current sources: FRED (H.15
+  constant-maturity Treasury yields), ECB (euro reference rates), EIA (energy spot prices). Licence review and
   the reasoning: `docs/design/02-etl-and-data-sources.md`.
 - ETL loads the **full available history** of every series. Sample windows and calendar
   alignment are parameters of the calculation, not of the load.

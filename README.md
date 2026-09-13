@@ -18,8 +18,9 @@ assistance is used, are in [`CLAUDE.md`](CLAUDE.md).
 
 ## Data
 
-Universe v1 is 31 public-domain daily series: 11 U.S. Treasury par-yield maturities, 12 ECB
-euro reference rates (used as USD crosses) and 8 EIA energy spot prices. Equities and futures
+Universe v1 is 31 public-domain daily series: 11 constant-maturity Treasury yields (Federal
+Reserve H.15, via FRED), 12 ECB euro reference rates (used as USD crosses) and 8 EIA energy
+spot prices. FRED and EIA need free API keys (`FRED_API_KEY`, `EIA_API_KEY` in `.env`). Equities and futures
 are planned for v2 once a licensed source is confirmed. Raw vendor files are never committed;
 the ETL reloads the full history from the original sources. See design note 02.
 
