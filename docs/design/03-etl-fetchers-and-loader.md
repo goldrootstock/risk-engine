@@ -278,13 +278,16 @@ status                       # 계열별 first/last price_date, 행 수, 마지�
 | | FRED |
 |---|---|
 | 엔드포인트 | `GET https://api.stlouisfed.org/fred/series/observations?series_id=DGS10&api_key=…&file_type=json&limit=100000&sort_order=asc[&observation_start=…&observation_end=…]` |
-| 인증 | 무료 키 `FRED_API_KEY`, **쿼리 파라미터** (헤더 방식 없음 [미확인: 키 없이 시험 불가]) → URL 은 로그·예외·manifest 어디에도 쿼리스트링 없이 기록 |
+| 인증 | 무료 키 `FRED_API_KEY`, **쿼리 파라미터 (v1)**. v2 의 Bearer 헤더는 `release/observations` 에만 있고 `series/observations` 는 v2 에 없다 [확인 2026-09-13] → URL 은 로그·예외·manifest 어디에도 쿼리스트링 없이 기록. 응답에 키 에코 없음 [확인] |
 | 한 번의 fetch | 계열당 요청 1개 (limit 100,000 > 최장 계열 DGS1 16,158행) |
 | 형식 | `observations[].{date, value}`; 결측은 `"."` → 행 제거 |
 | 시작 | DGS1MO 2001-07-31, DGS3MO·DGS6MO 1981-09-01, DGS1·DGS3·DGS5·DGS10·DGS20 1962-01-02, DGS2 1976-06-01, DGS7 1969-07-01, DGS30 1977-02-15 [확인 2026-09-13] |
 | **지연** | H.15 를 **T+1** 로 반영 — 재무부 페이지보다 하루 늦다 (2026-09-13 대조: 재무부에만 2026-09-11 존재). 일별 배치가 D 에 D−1 까지 본다 |
-| 대조 | 재무부 적재분 96,145행과 날짜별 비교: **11계열 전부 불일치 0건**, 재무부에만 있는 날짜 = 최신 1일, FRED 에만 있는 날짜 = 1990 이전 이력 |
+| 대조 | 재무부 적재분 96,145행과 날짜별 비교: **11계열 전부 불일치 0건** (`fredgraph.csv` 와 실제 API sync `updated=0` 두 번 확인), 재무부에만 있는 날짜 = 최신 1일(2026-09-11), FRED 에만 있는 날짜 = 1990 이전 이력 51,001행이 추가 적재됨 |
+| 절단 방지 | `count` ≠ 받은 관측치 수면 `ValueError`. 조용한 절단 없음 (`test_fred_fetch_rejects_truncated_response`) |
 
 **instrument_id 보존.** `upsert_instruments` 의 충돌 키가 `(source, ticker)` 라 universe.csv 의 source 를 `fred` 로 바꾸면 새 행이 생기고 96,145행이 고아가 된다. 그래서 **데이터 마이그레이션 `0005_rates_to_fred.sql`** 이 먼저 `UPDATE instruments SET source='fred', source_id=DGS…` 로 기존 행을 바꾼다(DDL 없음, `instrument_id` 불변, `etl_runs` 이력의 `source='ustreasury'` 는 그대로). 그 뒤 universe.csv 의 `(fred, UST_10Y)` 가 기존 행과 충돌해 갱신만 일어난다. 테스트 `test_0005_moves_rates_to_fred_keeping_instrument_ids`.
+
+**성공 기록은 가격과 한 트랜잭션, 실패 기록은 밖.** `_sync_source` 는 `upsert_prices` 와 `record_etl_run('loaded')` 를 하나의 `conn.transaction()` 으로 감싼다. 실패하면 그 블록이 롤백되고 `record_etl_run('failed')` 는 블록 밖 별도 트랜잭션에서 쓴다. 세 경로(성공 원자성·적재 중 실패·감사 기록 실패)를 `tests/test_etl_sync_paths.py` 가 고정한다.
 
 **EIA 키 전달도 이 시점에 헤더로.** `X-Api-Key` 헤더를 받는다 [확인 2026-09-13]. 헤더로 보내도 응답이 키를 에코하므로 스크럽은 유지. `etl.http` 는 예외 메시지에 URL 경로만 넣는다.
