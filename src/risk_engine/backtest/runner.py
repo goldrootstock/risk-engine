@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -27,8 +28,10 @@ from risk_engine.backtest.statistics import (
     pla,
     traffic_light,
 )
-from risk_engine.risk.engine import prepare
+from risk_engine.risk import fhs as fhs_mod
+from risk_engine.risk.engine import RiskParams, prepare
 from risk_engine.risk.positions import load_snapshot
+from risk_engine.risk.returns import ReturnMatrix
 
 DEFAULT_PARAMS_PATH = Path("config/backtest_params.toml")
 
@@ -57,6 +60,7 @@ class BacktestConfig:
     ks_green: float
     ks_amber: float
     sha256: str
+    horizon_method: str = "block"
 
     @classmethod
     def load(cls, path: Path = DEFAULT_PARAMS_PATH) -> BacktestConfig:
@@ -74,6 +78,7 @@ class BacktestConfig:
             ks_green=float(c["pla"]["ks_green"]),
             ks_amber=float(c["pla"]["ks_amber"]),
             sha256=hashlib.sha256(raw).hexdigest(),
+            horizon_method=str(c.get("horizon", {}).get("method", "block")),
         )
 
 
@@ -89,7 +94,7 @@ class RunRecord:
 
 @dataclass(frozen=True, slots=True)
 class DayResult:
-    """One ``backtest_results`` row."""
+    """One ``backtest_results`` row. ``exception`` is the official (horizon-consistent) one."""
 
     run_id: int
     as_of: date
@@ -100,6 +105,11 @@ class DayResult:
     es: float
     exception: bool
     attribution: dict[str, float]
+    h: int = 1
+    var_block: float | None = None
+    var_sqrt: float | None = None
+    exception_raw: bool = False
+    exception_sqrt: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +121,8 @@ class WindowSummary:
     n_obs: int
     exceptions: int
     expected: float
+    exceptions_raw: int
+    exceptions_sqrt: int
     kupiec: LrTest
     independence: LrTest
     cc: LrTest
@@ -138,8 +150,13 @@ def load_inputs(
     tag: str = "daily_batch",
     method: str = "fhs",
     cfg: BacktestConfig,
-) -> tuple[list[RunRecord], list[DailyPnl]]:
-    """Read the run series and compute HPL/RTPL for each run date. Read-only."""
+    risk_params: RiskParams | None = None,
+) -> tuple[list[RunRecord], list[DailyPnl], dict[date, float]]:
+    """Read the run series and compute HPL/RTPL per run date. Read-only.
+
+    For multi-business-day transitions the h-day block-bootstrap VaR is computed as well and
+    returned keyed by run date.
+    """
     rows = conn.execute(
         RUNS_SQL,
         {
@@ -152,27 +169,64 @@ def load_inputs(
     ).fetchall()
     runs = [RunRecord(int(r[0]), r[1], float(r[3]), float(r[4])) for r in rows if r[3] is not None]
     if not runs:
-        return [], []
+        return [], [], {}
     last = runs[-1].as_of
     rm, specs, _ = prepare(conn, universe, date.max)  # full series, so the day after `last` exists
     positions, _ = load_snapshot(conn, portfolio_code, last)
     idx = rm.changes.index
     pnls: list[DailyPnl] = []
     skipped: list[date] = []
+    horizon_var: dict[date, float] = {}
+    rp = risk_params or RiskParams.load()
     for run in runs:
         t = pd.Timestamp(run.as_of)
         pos = int(idx.get_indexer(pd.DatetimeIndex([t]))[0])
         if pos < 0 or pos + 1 >= len(idx):
             skipped.append(run.as_of)
             continue
-        pnls.append(daily_pnl(rm, t, positions, specs))
+        p = daily_pnl(rm, t, positions, specs)
+        pnls.append(p)
+        h = int(np.busday_count(p.as_of, p.pnl_date))
+        if h >= 2:
+            horizon_var[p.as_of] = _block_var(rm, pos, positions, specs, rp, h)
     # The last run can never be backtested (no t+1 yet); anything else missing is a data gap
     # that must be visible, never silently dropped.
     if len(skipped) > 1 or (skipped and skipped[0] != last):
         raise ValueError(
             f"{len(skipped)} run dates have no aligned next observation: {skipped[:5]}"
         )
-    return runs, pnls
+    return runs, pnls, horizon_var
+
+
+def _block_var(
+    rm: ReturnMatrix,
+    pos: int,
+    positions: Mapping[str, float],
+    specs: dict[str, Any],
+    rp: RiskParams,
+    h: int,
+) -> float:
+    """h-day FHS VaR by block bootstrap on the data available at position ``pos``."""
+    sliced = ReturnMatrix(
+        changes=rm.changes.iloc[: pos + 1],
+        levels=rm.levels.iloc[: pos + 1],
+        kind=rm.kind,
+        factor_of=rm.factor_of,
+        meta={},
+    )
+    r = fhs_mod.evaluate(
+        sliced,
+        positions,
+        specs,
+        lam=rp.lam,
+        window=rp.window_days,
+        warmup=rp.warmup_days,
+        var_alpha=rp.var_confidence,
+        es_alpha=rp.es_confidence,
+        stressed_window=rp.stressed_window_days,
+        horizon=h,
+    )
+    return r.var
 
 
 def backtest(
@@ -182,15 +236,31 @@ def backtest(
     *,
     universe: str,
     portfolio_code: str,
+    horizon_var: Mapping[date, float] | None = None,
 ) -> BacktestReport:
-    """Exceptions per day plus window statistics. Pure; ``cfg`` is never modified."""
+    """Exceptions per day plus window statistics. Pure; ``cfg`` is never modified.
+
+    For a transition spanning ``h`` business days the official exception compares the loss
+    with the ``h``-day VaR chosen by ``cfg.horizon_method`` (block bootstrap by default);
+    the raw 1-day and sqrt(h) comparisons are always recorded alongside.
+    """
     by_date = {p.as_of: p for p in pnls}
+    hv = dict(horizon_var or {})
     days: list[DayResult] = []
     for run in runs:
         p = by_date.get(run.as_of)
         if p is None:
             continue
         loss = -p.hpl
+        h = int(np.busday_count(p.as_of, p.pnl_date))
+        var_sqrt = run.var * float(np.sqrt(h)) if h >= 2 else None
+        var_block = hv.get(run.as_of) if h >= 2 else None
+        if h >= 2 and var_block is None and cfg.horizon_method == "block":
+            raise ValueError(f"no block VaR for {run.as_of} (h={h})")
+        official = {"raw": run.var, "sqrt": var_sqrt, "block": var_block}[cfg.horizon_method]
+        if official is None:
+            official = run.var
+        exc = loss > official
         days.append(
             DayResult(
                 run_id=run.run_id,
@@ -200,8 +270,15 @@ def backtest(
                 rtpl=p.rtpl,
                 var=run.var,
                 es=run.es,
-                exception=loss > run.var,
-                attribution=top_attribution(p.loss_by_instrument) if loss > run.var else {},
+                exception=exc,
+                attribution=(
+                    top_attribution(p.loss_by_instrument) if (exc or loss > run.var) else {}
+                ),
+                h=h,
+                var_block=var_block,
+                var_sqrt=var_sqrt,
+                exception_raw=loss > run.var,
+                exception_sqrt=(loss > var_sqrt) if var_sqrt is not None else loss > run.var,
             )
         )
     windows = [
@@ -229,6 +306,8 @@ def summarise(days: list[DayResult], cfg: BacktestConfig) -> WindowSummary:
         n_obs=n,
         exceptions=x,
         expected=n * (1.0 - cfg.confidence),
+        exceptions_raw=int(sum(d.exception_raw for d in days)),
+        exceptions_sqrt=int(sum(d.exception_sqrt for d in days)),
         kupiec=uc,
         independence=ind,
         cc=conditional_coverage(uc, ind),

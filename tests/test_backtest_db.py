@@ -23,7 +23,7 @@ from .conftest import MIGRATIONS_DIR, REPO_ROOT
 
 pytestmark = pytest.mark.db
 
-N_DAYS = 700
+N_DAYS = 703
 N_RUNS = 40
 
 
@@ -36,9 +36,13 @@ def conn(
     ids = dict(db_conn.execute("SELECT ticker, instrument_id FROM instruments").fetchall())
     rng = np.random.default_rng(11)
     dates = pd.bdate_range("2019-01-01", periods=N_DAYS)
+    # two mid-week holes inside the run range (runs start at warmup + window = 575) so that
+    # some backtested transitions span >= 2 business days (horizon test)
+    dates = dates.delete([585, 586, 600])
+    n = len(dates)
     series = {
-        "EURUSD": 1.1 * np.exp(np.cumsum(rng.standard_normal(N_DAYS) * 0.006)),
-        "WTI": 60 + np.cumsum(rng.standard_normal(N_DAYS) * 1.5),
+        "EURUSD": 1.1 * np.exp(np.cumsum(rng.standard_normal(n) * 0.006)),
+        "WTI": 60 + np.cumsum(rng.standard_normal(n) * 1.5),
     }
     with (
         db_conn.cursor() as cur,
@@ -104,10 +108,13 @@ def test_backtest_round_trip(conn: psycopg.Connection[Any]) -> None:
         N_RUNS,
     )
     conn.execute("SET default_transaction_read_only = on")  # loading and testing must not write
-    runs, pnls = load_inputs(conn, "t", "T", cfg=cfg)
-    report = backtest(runs, pnls, cfg, universe="t", portfolio_code="T")
+    runs, pnls, hv = load_inputs(conn, "t", "T", cfg=cfg)
+    report = backtest(runs, pnls, cfg, universe="t", portfolio_code="T", horizon_var=hv)
     conn.execute("SET default_transaction_read_only = off")
     assert len(runs) == N_RUNS and len(report.days) == N_RUNS
+    multi = [d for d in report.days if d.h >= 2]
+    assert multi and all(d.var_block is not None and d.var_sqrt is not None for d in multi)
+    assert all(d.var_block > d.var for d in multi)  # h-day VaR exceeds the 1-day VaR
     assert [w.n_obs for w in report.windows] == [20, 20]
     assert all(d.pnl_date > d.as_of for d in report.days)
     assert bt_record.write(conn, report, "test") == 2

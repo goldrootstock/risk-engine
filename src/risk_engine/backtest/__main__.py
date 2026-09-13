@@ -32,22 +32,27 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     cfg = BacktestConfig.load()
     with psycopg.connect(settings.database_url, autocommit=True) as conn:
-        runs, pnls = load_inputs(
+        runs, pnls, hv = load_inputs(
             conn, args.universe, args.portfolio, tag=args.tag, method=args.method, cfg=cfg
         )
         if not runs:
             print("no runs found", file=sys.stderr)
             return 1
-        report = backtest(runs, pnls, cfg, universe=args.universe, portfolio_code=args.portfolio)
+        report = backtest(
+            runs, pnls, cfg, universe=args.universe, portfolio_code=args.portfolio, horizon_var=hv
+        )
         n = record.write(conn, report, code_version())
     total = sum(d.exception for d in report.days)
+    raw = sum(d.exception_raw for d in report.days)
+    sq = sum(d.exception_sqrt for d in report.days)
     print(
-        f"days={len(report.days)} exceptions={total} "
+        f"days={len(report.days)} exceptions[{cfg.horizon_method}]={total} raw={raw} sqrt={sq} "
         f"expected={len(report.days) * (1 - cfg.confidence):.1f} windows={n}"
     )
     for w in report.windows:
         print(
             f"{w.window_start}..{w.window_end} n={w.n_obs} x={w.exceptions} "
+            f"(raw {w.exceptions_raw}, sqrt {w.exceptions_sqrt}) "
             f"kupiec_p={w.kupiec.p_value:.3f} "
             f"ind_p={w.independence.p_value:.3f} cc_p={w.cc.p_value:.3f} zone={w.traffic_light} "
             f"pla rho={w.pla.spearman:.3f} ks={w.pla.ks:.3f} {w.pla.zone}"

@@ -11,19 +11,23 @@ from risk_engine.backtest.runner import BacktestReport
 
 UPSERT_DAY = """
 INSERT INTO backtest_results (run_id, universe, portfolio_code, as_of_date, pnl_date, hpl,
-                              rtpl, var_99, es_975, exception, attribution)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                              rtpl, var_99, es_975, exception, attribution, h_business_days,
+                              var_h_block, var_h_sqrt, exception_raw, exception_sqrt)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (run_id) DO UPDATE SET pnl_date = EXCLUDED.pnl_date, hpl = EXCLUDED.hpl,
     rtpl = EXCLUDED.rtpl, var_99 = EXCLUDED.var_99, es_975 = EXCLUDED.es_975,
-    exception = EXCLUDED.exception, attribution = EXCLUDED.attribution, created_at = now()
+    exception = EXCLUDED.exception, attribution = EXCLUDED.attribution,
+    h_business_days = EXCLUDED.h_business_days, var_h_block = EXCLUDED.var_h_block,
+    var_h_sqrt = EXCLUDED.var_h_sqrt, exception_raw = EXCLUDED.exception_raw,
+    exception_sqrt = EXCLUDED.exception_sqrt, created_at = now()
 """
 
 INSERT_WINDOW = """
 INSERT INTO backtest_summaries (universe, portfolio_code, window_start, window_end, n_obs,
-    exceptions,
-    expected, kupiec_lr, kupiec_p, christoffersen_lr, christoffersen_p, cc_lr, cc_p, traffic_light,
-    pla_spearman, pla_ks, pla_zone, params, code_version)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    exceptions, expected, kupiec_lr, kupiec_p, christoffersen_lr, christoffersen_p, cc_lr, cc_p,
+    traffic_light, pla_spearman, pla_ks, pla_zone, params, code_version, exceptions_raw,
+    exceptions_sqrt)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 """
 
 
@@ -37,6 +41,7 @@ def write(
         "confidence": cfg.confidence,
         "significance": cfg.significance,
         "backtest_params_sha256": cfg.sha256,
+        "horizon_method": cfg.horizon_method,
         **report.meta,
     }
     with conn.transaction(), conn.cursor() as cur:
@@ -55,6 +60,11 @@ def write(
                     d.es,
                     d.exception,
                     Jsonb(d.attribution),
+                    d.h,
+                    d.var_block,
+                    d.var_sqrt,
+                    d.exception_raw,
+                    d.exception_sqrt,
                 )
                 for d in report.days
             ],
@@ -82,6 +92,8 @@ def write(
                     w.pla.zone,
                     Jsonb(params),
                     code_version,
+                    w.exceptions_raw,
+                    w.exceptions_sqrt,
                 )
                 for w in report.windows
             ],

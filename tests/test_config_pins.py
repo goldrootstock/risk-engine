@@ -160,6 +160,7 @@ EXPECTED_BACKTEST_PARAMS = {
     "exceptions": {"confidence": 0.99, "significance": 0.05},
     "traffic_light": {"yellow_from": 5, "red_from": 10},
     "pla": {"spearman_green": 0.80, "spearman_amber": 0.70, "ks_green": 0.09, "ks_amber": 0.12},
+    "horizon": {"method": "block"},
 }
 
 

@@ -120,5 +120,6 @@ def test_backtest_windows_and_exceptions() -> None:
     assert len(rep.days) == 600 and sum(x.exception for x in rep.days) == 6
     assert [w.n_obs for w in rep.windows] == [250, 250, 250]  # two blocks + trailing window
     assert rep.windows[0].exceptions == 3 and rep.windows[0].traffic_light == "green"
+    assert rep.windows[0].exceptions_raw == 3  # h < 2 everywhere: official == raw
     assert rep.days[0].attribution == {"WTI": 150.0, "_total": 150.0}
     assert rep.config is cfg  # never replaced

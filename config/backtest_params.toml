@@ -18,3 +18,6 @@ spearman_green = 0.80
 spearman_amber = 0.70
 ks_green = 0.09
 ks_amber = 0.12
+
+[horizon]                  # JK decision 2026-09-13: official exception uses the h-day block-bootstrap VaR
+method = "block"           # "block" | "sqrt" | "raw"; raw and sqrt are always recorded alongside
