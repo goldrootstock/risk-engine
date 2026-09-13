@@ -27,3 +27,4 @@ data/raw/
 # Personal job-search documents (not part of the public project)
 docs/cowork_*
 docs/gap_plan_*
+docs/handoff_*
