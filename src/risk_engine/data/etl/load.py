@@ -152,7 +152,11 @@ def record_etl_run(
     series was skipped or the run was a dry run).
     """
     findings = [
-        {**asdict(f), "price_date": f.price_date.isoformat() if f.price_date else None}
+        {
+            **asdict(f),
+            "price_date": f.price_date.isoformat() if f.price_date else None,
+            "prev_date": f.prev_date.isoformat() if f.prev_date else None,
+        }
         for f in (report.findings if report else ())
     ]
     row = {

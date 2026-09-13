@@ -1,0 +1,18 @@
+# Risk engine parameters (design note 05). Every value here is pinned by
+# tests/test_config_pins.py and its sha256 is written to risk_runs.params on every run.
+# Changing a value means changing the test table in the same commit and saying why.
+
+[fhs]
+lambda = 0.94        # RiskMetrics TD 1996 §5.3: optimal daily decay
+window_days = 500    # residual pool length (Basel min 250; 2y common; see decisions.md)
+warmup_days = 75     # 99% of EWMA weight lies in the last 74 obs at lambda 0.94; excluded from pool and backtests
+
+[measures]
+var_confidence = 0.99         # Basel VaR
+es_confidence = 0.975         # FRTB ES
+horizon_days = 1
+stressed_window_days = 250    # FRTB 12-month stress period
+
+[montecarlo]
+paths = 10000
+seed = 20260913

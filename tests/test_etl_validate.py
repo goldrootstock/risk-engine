@@ -51,6 +51,7 @@ def test_wti_2020_04_20_is_warning_not_error() -> None:
         f for f in report.findings if f.code == "jump" and f.price_date == date(2020, 4, 20)
     )
     assert jump.value == pytest.approx(-55.29) and jump.threshold == 10.0
+    assert jump.prev_date == date(2020, 4, 17) and jump.gap_days == 3  # over the weekend
     assert (
         report.rows == 15 and report.first == date(2020, 4, 13) and report.last == date(2020, 5, 1)
     )

@@ -102,8 +102,10 @@ def validate(
         * ``jump`` — day-over-day change beyond the threshold for the series' return type:
           ``|P_t/P_{t-1} - 1| > max_abs_return`` (log), ``|Δy| > max_abs_change_bp``
           (yield; values are percent so Δ is multiplied by 100), ``|ΔP| > max_abs_change``
-          (absolute, in the series' own units). Consecutive dates in the frame are compared;
-          calendar gaps are not special-cased.
+          (absolute, in the series' own units). Consecutive observations are compared; the
+          finding records ``prev_date`` and ``gap_days`` so that a change measured across a
+          holiday or a hole is visible as a multi-day change. Thresholds are not scaled by
+          the gap.
     """
     today = today or date.today()
     findings = _structural(frame, today)
@@ -127,7 +129,7 @@ def validate(
         )
 
     if len(close) > 1:
-        prev, curr, when = close[:-1], close[1:], dates[1:]
+        prev, curr, when, before = close[:-1], close[1:], dates[1:], dates[:-1]
         if spec.quote_type == "yield":
             delta = (curr - prev) * 100.0  # percent -> basis points
             mask = abs(delta) > thresholds.max_abs_change_bp
@@ -141,15 +143,18 @@ def validate(
                 delta = curr / prev - 1.0  # inf/nan on a zero base: already an error above
             mask = np.isfinite(delta) & (abs(delta) > thresholds.max_abs_return)
             unit, limit = "return", thresholds.max_abs_return
-        for d, v in zip(when[mask], delta[mask], strict=True):
+        for d, b, v in zip(when[mask], before[mask], delta[mask], strict=True):
+            gap = (d - b).days
             findings.append(
                 Finding(
                     "warning",
                     "jump",
-                    f"|d| {abs(v):.4g} {unit} > {limit:g}",
+                    f"|d| {abs(v):.4g} {unit} > {limit:g} over {gap} day(s) since {b}",
                     d,
                     float(v),
                     float(limit),
+                    prev_date=b,
+                    gap_days=gap,
                 )
             )
 

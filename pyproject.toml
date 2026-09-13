@@ -20,7 +20,8 @@ dependencies = [
   "pandas>=2.2",
   "psycopg[binary]>=3.2",
   "python-dotenv>=1.0",
-  "httpx==0.28.1",   # pinned (design note 03 §9); 1.0.devN pre-releases deliberately not adopted
+  "httpx==0.28.1",
+  "scipy>=1.14",   # pinned (design note 03 §9); 1.0.devN pre-releases deliberately not adopted
 ]
 
 [project.optional-dependencies]
@@ -101,3 +102,7 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 no_implicit_optional = true
 strict_equality = true
+
+[[tool.mypy.overrides]]
+module = ["scipy.*"]
+ignore_missing_imports = true   # scipy ships no stubs; scipy-stubs is a third-party package we do not pin

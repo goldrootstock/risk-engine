@@ -120,7 +120,12 @@ class Source(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class Finding:
-    """One observation from :func:`validate`. Serialised 1:1 into ``etl_runs.findings``."""
+    """One observation from :func:`validate`. Serialised 1:1 into ``etl_runs.findings``.
+
+    For ``jump`` findings ``prev_date`` and ``gap_days`` name the observation the change was
+    measured against: a jump across a holiday or a data hole is a multi-day change and must
+    be readable as such (JK, 2026-09-13).
+    """
 
     level: FindingLevel
     code: FindingCode
@@ -128,6 +133,8 @@ class Finding:
     price_date: date | None = None
     value: float | None = None
     threshold: float | None = None
+    prev_date: date | None = None
+    gap_days: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

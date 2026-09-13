@@ -70,3 +70,24 @@ def test_loader_returns_exactly_the_toml_values() -> None:
         cfg["defaults"]["max_abs_change_bp"],
         cfg["defaults"]["max_abs_change"],
     )
+
+
+EXPECTED_RISK_PARAMS = {
+    "fhs": {"lambda": 0.94, "window_days": 500, "warmup_days": 75},
+    "measures": {
+        "var_confidence": 0.99,
+        "es_confidence": 0.975,
+        "horizon_days": 1,
+        "stressed_window_days": 250,
+    },
+    "montecarlo": {"paths": 10000, "seed": 20260913},
+}
+
+
+def test_risk_params_are_pinned() -> None:
+    with (REPO_ROOT / "config" / "risk_params.toml").open("rb") as fh:
+        cfg = tomllib.load(fh)
+    assert cfg == EXPECTED_RISK_PARAMS, (
+        "config/risk_params.toml changed: update EXPECTED_RISK_PARAMS in the same commit "
+        "and say why in the message (design note 00 §3-1)"
+    )
