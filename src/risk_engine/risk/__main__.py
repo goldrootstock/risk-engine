@@ -81,7 +81,14 @@ def main(argv: list[str] | None = None) -> int:
         # backfill: build the return matrix once to the end date and slice per date
         t0 = time.perf_counter()
         rm, specs, meta = engine.prepare(conn, args.universe, args.end)
-        dates = [d for d in rm.changes.index if args.start <= d.date() <= args.end]
+        # a run needs warm-up + pool observations before it: skip the ineligible head
+        first_eligible = params.warmup_days + params.window_days
+        eligible = rm.changes.index[first_eligible:]
+        dates = [d for d in eligible if args.start <= d.date() <= args.end]
+        if not dates:
+            print("backfill: no eligible dates in range", file=sys.stderr)
+            return 1
+        log.info("backfill: first eligible date %s, %d runs", dates[0].date(), len(dates))
         done = 0
         for d in dates:
             sliced = engine.ReturnMatrix(

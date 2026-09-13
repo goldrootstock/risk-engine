@@ -152,4 +152,4 @@ def test_positions_main_is_pinned() -> None:
         rows = list(csv.DictReader(fh))
     assert {r["ticker"]: float(r["quantity"]) for r in rows} == EXPECTED_POSITIONS_MAIN
     assert {r["portfolio_code"] for r in rows} == {"MAIN"}
-    assert {r["as_of_date"] for r in rows} == {"2006-02-09"}
+    assert {r["as_of_date"] for r in rows} == {"1999-01-04"}  # before every sample set start
