@@ -74,6 +74,8 @@ raw output is what lets them re-synchronise.
 - ETL loads the **full available history** of every series. Sample windows and calendar
   alignment are parameters of the calculation, not of the load.
 - Every published result cites the data sources and records the data snapshot date.
+- Two sample sets coexist (`from_1999` for backtests, `default` for factor analysis): every
+  reported number names its set, and queries on `risk_runs` / `backtest_results` filter on it.
 
 ## 4. Terminology
 

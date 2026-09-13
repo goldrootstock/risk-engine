@@ -6,9 +6,11 @@
 start = 2006-02-09          # 30-year Treasury reissued; all 31 series available from here
 exclude = []
 
-[from_1999]
-start = 1999-01-04          # euro launch; drops series that start later or have gaps
-exclude = ["UST_1M", "UST_30Y", "EURCNY"]
+[from_1999]                 # official backtest set (JK decision 2026-09-13, option a2)
+start = 1999-01-04          # euro launch
+exclude = ["UST_1M", "EURCNY"]   # 1M: DV01 ~ 0, starts 2001-07; CNY: managed peg, starts 2005-04
+# UST_30Y stays: FRED DGS30 carries H.15 estimates for 2002-02-19..2006-02-08 (994 rows,
+# extrapolated from the 20-year CMT) — disclosed in decisions.md and the model document.
 
 [rates_energy_1990]
 start = 1990-04-02          # Gulf Coast jet fuel starts; rates + energy only, no FX

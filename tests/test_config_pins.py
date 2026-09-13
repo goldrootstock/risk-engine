@@ -6,7 +6,9 @@ breaks CI until the table — and therefore the commit — changes with it. A pa
 change is then always visible as a two-file diff with a commit message explaining why.
 """
 
+import csv
 import tomllib
+from datetime import date
 from pathlib import Path
 
 from risk_engine.data.etl.http import DEFAULT_RETRY_POLICY, RETRY_STATUSES
@@ -91,3 +93,63 @@ def test_risk_params_are_pinned() -> None:
         "config/risk_params.toml changed: update EXPECTED_RISK_PARAMS in the same commit "
         "and say why in the message (design note 00 §3-1)"
     )
+
+
+EXPECTED_UNIVERSES = {
+    "default": {"start": date(2006, 2, 9), "exclude": []},
+    "from_1999": {"start": date(1999, 1, 4), "exclude": ["UST_1M", "EURCNY"]},
+    "rates_energy_1990": {
+        "start": date(1990, 4, 2),
+        "include": [
+            "UST_3M",
+            "UST_6M",
+            "UST_1Y",
+            "UST_2Y",
+            "UST_3Y",
+            "UST_5Y",
+            "UST_7Y",
+            "UST_10Y",
+            "WTI",
+            "BRENT",
+            "GASOLINE_NYH",
+            "GASOLINE_USGC",
+            "HEATOIL_NYH",
+            "JET_USGC",
+        ],
+    },
+}
+
+
+def test_universe_sets_are_pinned() -> None:
+    with (REPO_ROOT / "config" / "universes.toml").open("rb") as fh:
+        cfg = tomllib.load(fh)
+    assert cfg == EXPECTED_UNIVERSES, "config/universes.toml changed: update EXPECTED_UNIVERSES"
+
+
+EXPECTED_POSITIONS_MAIN = {
+    "EURUSD": 20_000_000,
+    "EURJPY": 2_000_000_000,
+    "EURGBP": -5_000_000,
+    "EURAUD": 10_000_000,
+    "EURCHF": 5_000_000,
+    "EURKRW": -10_000_000_000,
+    "WTI": 200_000,
+    "BRENT": -100_000,
+    "HENRYHUB": 500_000,
+    "GASOLINE_NYH": 2_000_000,
+    "HEATOIL_NYH": -1_000_000,
+    "UST_3M": 20_000_000,
+    "UST_2Y": 50_000_000,
+    "UST_5Y": 30_000_000,
+    "UST_10Y": 40_000_000,
+    "UST_30Y": -10_000_000,
+}
+
+
+def test_positions_main_is_pinned() -> None:
+    """The book drives every risk number; changing it is a decision, not a tweak."""
+    with (REPO_ROOT / "config" / "positions_main.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert {r["ticker"]: float(r["quantity"]) for r in rows} == EXPECTED_POSITIONS_MAIN
+    assert {r["portfolio_code"] for r in rows} == {"MAIN"}
+    assert {r["as_of_date"] for r in rows} == {"2006-02-09"}

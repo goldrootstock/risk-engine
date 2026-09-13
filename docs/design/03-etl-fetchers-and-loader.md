@@ -284,7 +284,7 @@ status                       # 계열별 first/last price_date, 행 수, 마지�
 | 형식 | `observations[].{date, value}`; 결측은 `"."` → 행 제거 |
 | 시작 | DGS1MO 2001-07-31, DGS3MO·DGS6MO 1981-09-01, DGS1·DGS3·DGS5·DGS10·DGS20 1962-01-02, DGS2 1976-06-01, DGS7 1969-07-01, DGS30 1977-02-15 [확인 2026-09-13] |
 | **지연** | H.15 를 **T+1** 로 반영 — 재무부 페이지보다 하루 늦다 (2026-09-13 대조: 재무부에만 2026-09-11 존재). 일별 배치가 D 에 D−1 까지 본다 |
-| 대조 | 재무부 적재분 96,145행과 날짜별 비교: **11계열 전부 불일치 0건** (`fredgraph.csv` 와 실제 API sync `updated=0` 두 번 확인), 재무부에만 있는 날짜 = 최신 1일(2026-09-11), FRED 에만 있는 날짜 = 1990 이전 이력 51,001행이 추가 적재됨 |
+| 대조 | 재무부 적재분 96,145행과 날짜별 비교: **11계열 전부 불일치 0건** (`fredgraph.csv` 와 실제 API sync `updated=0` 두 번 확인), 재무부에만 있는 날짜 = 최신 1일(2026-09-11), FRED 에만 있는 날짜 = 1990 이전 이력 **및 DGS30 의 2002-02-19~2006-02-08 추정치 994행** (합계 51,001행 추가 적재; 정정 2026-09-13, `docs/decisions.md` §2-1) |
 | 절단 방지 | `count` ≠ 받은 관측치 수면 `ValueError`. 조용한 절단 없음 (`test_fred_fetch_rejects_truncated_response`) |
 
 **instrument_id 보존.** `upsert_instruments` 의 충돌 키가 `(source, ticker)` 라 universe.csv 의 source 를 `fred` 로 바꾸면 새 행이 생기고 96,145행이 고아가 된다. 그래서 **데이터 마이그레이션 `0005_rates_to_fred.sql`** 이 먼저 `UPDATE instruments SET source='fred', source_id=DGS…` 로 기존 행을 바꾼다(DDL 없음, `instrument_id` 불변, `etl_runs` 이력의 `source='ustreasury'` 는 그대로). 그 뒤 universe.csv 의 `(fred, UST_10Y)` 가 기존 행과 충돌해 갱신만 일어난다. 테스트 `test_0005_moves_rates_to_fred_keeping_instrument_ids`.
