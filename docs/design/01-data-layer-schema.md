@@ -112,7 +112,7 @@ CREATE TABLE positions (
 | 스냅샷 vs 거래 원장(trade ledger) | **스냅샷** | 체결 테이블 + 누적합 | 리스크 엔진이 필요한 건 "날짜 D 의 보유량"뿐. 원장은 체결·정정·수수료라는 별도 도메인을 끌고 오는데 타깃 공고 어디도 요구하지 않는다 |
 | 스냅샷 시맨틱 | 날짜 D 의 실행은 `as_of_date <= D` 중 **가장 최근** 스냅샷 사용 | 매일 스냅샷 강제 | 포지션이 안 바뀌면 행을 복제할 이유가 없다. 실행이 실제로 쓴 날짜는 `risk_runs.positions_as_of` 에 기록해 재현성 확보 |
 | `portfolio_code` TEXT (portfolios 테이블 없음) | **1주차는 코드만** | `portfolios(portfolio_id, name, base_currency)` | 지금 포트폴리오 메타는 기준통화 하나인데 전부 USD 로 고정. 메타가 둘 이상 생기면 그때 테이블로 분리 |
-| `quantity` NUMERIC, 부호 있음 | | `long_qty`/`short_qty` 분리 | 숏은 헤지·선물에서 기본. 한 컬럼 부호로 표현하면 P&L 식이 `qty × Δprice` 하나 |
+| `quantity` NUMERIC, 부호 있음 | | `long_qty`/`short_qty` 분리 | 숏은 헤지·선물에서 기본. 한 컬럼 부호로 표현하면 P&L 식이 `qty × Δprice` 하나 — **정정(노트 04 §4)**: 이 식은 price 계열용이고, 수량의 의미는 종류별로 다르다(FX = 외화 수량, 에너지 = 물량, 국채 = 액면 USD 로 DV01 매핑) |
 | `CHECK (quantity <> 0)` | | | 0 수량은 "포지션 없음"과 같은데 행이 있으면 조인 결과가 오염된다. 청산은 행 삭제 |
 | `market_value`·`avg_cost` 미포함 | | | 평가액은 `prices` 에서 파생. 평균단가는 시장리스크에 불필요(마진 모듈도 미실현손익이 아니라 익스포저를 본다) |
 
