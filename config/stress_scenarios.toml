@@ -1,0 +1,115 @@
+# Stress scenarios (design note 07). The sha256 of this file is recorded with every stress
+# run. Historical windows are date ranges only — the shocks are whatever the data says,
+# never scaled by volatility. Hypothetical sizes are the only numbers here; sources in the
+# note and in docs/decisions.md.
+
+[historical.lehman_2008]
+start = 2008-09-12
+end = 2008-10-10
+why = "Lehman (09-15) to the worst week; oil, rates and USD moved together"
+
+[historical.gfc_worst_week_2008]
+start = 2008-10-03
+end = 2008-10-10
+why = "the single worst week of the crisis"
+
+[historical.covid_2020]
+start = 2020-02-19
+end = 2020-03-23
+why = "fastest drawdown on record; oil collapse, USD squeeze, rates to zero"
+
+[historical.wti_negative_2020]
+start = 2020-04-17
+end = 2020-04-20
+why = "the day the model missed (6.39x VaR exception); WTI -55.29"
+
+[historical.rates_2022]
+start = 2022-01-03
+end = 2022-10-21
+why = "fastest rate rise in 40 years; worst stretch for the long Treasury book"
+
+[historical.rates_june_2022]
+start = 2022-06-09
+end = 2022-06-14
+why = "CPI shock, two days of 50 bp"
+
+[historical.taper_2013]
+start = 2013-05-21
+end = 2013-06-24
+why = "taper tantrum; behind the 2 % exception year in the backtest"
+
+[historical.oil_crash_2014]
+start = 2014-11-26
+end = 2015-01-15
+why = "OPEC declines to cut; WTI -40 %"
+
+[historical.sept11_2001]
+start = 2001-09-10
+end = 2001-09-21
+why = "market closure and reopening; same shape as the 11-business-day hole"
+
+[historical.election_2016]
+start = 2016-11-08
+end = 2016-11-14
+why = "consecutive exceptions in the yellow window; rates and USD together"
+
+[historical.texas_freeze_2021]
+start = 2021-02-11
+end = 2021-02-18
+why = "Henry Hub spot spike; the other side of the energy book"
+
+[historical.ukraine_2022]
+start = 2022-02-23
+end = 2022-03-08
+why = "crude +30 %, product spreads"
+
+# Hypothetical shocks. rates_bp = parallel shift of every yield factor; fx_pct = change of
+# every USD-per-unit rate (positive = foreign currencies strengthen, USD weakens);
+# energy_pct = change of every energy level in percent of today; gas_pct applies to HENRYHUB only.
+[hypothetical.rates_up_100]
+rates_bp = 100
+why = "Basel IRRBB parallel up (half of the 200 bp standard)"
+
+[hypothetical.rates_down_100]
+rates_bp = -100
+why = "Basel IRRBB parallel down"
+
+[hypothetical.rates_up_200]
+rates_bp = 200
+why = "Basel IRRBB standard parallel shock"
+
+[hypothetical.usd_up_10]
+fx_pct = -10
+why = "FRTB FX risk weight ~10 %; USD strengthens 10 % against everything"
+
+[hypothetical.usd_down_10]
+fx_pct = 10
+why = "mirror"
+
+[hypothetical.oil_down_30]
+energy_pct = -30
+why = "about half of the 2014 and 2020 realised crude drawdowns (arbitrary)"
+
+[hypothetical.oil_up_30]
+energy_pct = 30
+why = "mirror; 2022 Ukraine spike was +30 % in two weeks"
+
+[hypothetical.gas_up_50]
+gas_pct = 50
+why = "Henry Hub winter spike (Feb 2021 was several hundred percent intraday)"
+
+[hypothetical.stagflation]
+rates_bp = 150
+energy_pct = 40
+fx_pct = -5
+why = "rates up, energy up, USD up: 2022 in one scenario"
+
+[hypothetical.deflation_shock]
+rates_bp = -150
+energy_pct = -40
+fx_pct = -8
+why = "2008/2020 in one scenario: rates down, energy down, USD up"
+
+[correlation]
+permutations = 20     # independent-sample ES averaged over this many seeded permutations
+seed = 20260913

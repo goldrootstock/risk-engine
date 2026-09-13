@@ -167,3 +167,42 @@ def test_backtest_params_are_pinned() -> None:
     with (REPO_ROOT / "config" / "backtest_params.toml").open("rb") as fh:
         cfg = tomllib.load(fh)
     assert cfg == EXPECTED_BACKTEST_PARAMS, "config/backtest_params.toml changed: update the table"
+
+
+EXPECTED_STRESS_HISTORICAL = {
+    "lehman_2008": (date(2008, 9, 12), date(2008, 10, 10)),
+    "gfc_worst_week_2008": (date(2008, 10, 3), date(2008, 10, 10)),
+    "covid_2020": (date(2020, 2, 19), date(2020, 3, 23)),
+    "wti_negative_2020": (date(2020, 4, 17), date(2020, 4, 20)),
+    "rates_2022": (date(2022, 1, 3), date(2022, 10, 21)),
+    "rates_june_2022": (date(2022, 6, 9), date(2022, 6, 14)),
+    "taper_2013": (date(2013, 5, 21), date(2013, 6, 24)),
+    "oil_crash_2014": (date(2014, 11, 26), date(2015, 1, 15)),
+    "sept11_2001": (date(2001, 9, 10), date(2001, 9, 21)),
+    "election_2016": (date(2016, 11, 8), date(2016, 11, 14)),
+    "texas_freeze_2021": (date(2021, 2, 11), date(2021, 2, 18)),
+    "ukraine_2022": (date(2022, 2, 23), date(2022, 3, 8)),
+}
+EXPECTED_STRESS_HYPOTHETICAL = {
+    "rates_up_100": {"rates_bp": 100},
+    "rates_down_100": {"rates_bp": -100},
+    "rates_up_200": {"rates_bp": 200},
+    "usd_up_10": {"fx_pct": -10},
+    "usd_down_10": {"fx_pct": 10},
+    "oil_down_30": {"energy_pct": -30},
+    "oil_up_30": {"energy_pct": 30},
+    "gas_up_50": {"gas_pct": 50},
+    "stagflation": {"rates_bp": 150, "energy_pct": 40, "fx_pct": -5},
+    "deflation_shock": {"rates_bp": -150, "energy_pct": -40, "fx_pct": -8},
+}
+
+
+def test_stress_scenarios_are_pinned() -> None:
+    with (REPO_ROOT / "config" / "stress_scenarios.toml").open("rb") as fh:
+        cfg = tomllib.load(fh)
+    hist = {k: (v["start"], v["end"]) for k, v in cfg["historical"].items()}
+    hyp = {
+        k: {kk: vv for kk, vv in v.items() if kk != "why"} for k, v in cfg["hypothetical"].items()
+    }
+    assert hist == EXPECTED_STRESS_HISTORICAL and hyp == EXPECTED_STRESS_HYPOTHETICAL
+    assert cfg["correlation"] == {"permutations": 20, "seed": 20260913}

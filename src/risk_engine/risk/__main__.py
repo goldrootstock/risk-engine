@@ -8,10 +8,11 @@ import sys
 import time
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import psycopg
 
-from risk_engine.risk import engine, record
+from risk_engine.risk import engine, record, stress, stress_record
 from risk_engine.risk.positions import load_positions_csv
 from risk_engine.settings import SettingsError, load_settings
 
@@ -41,6 +42,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     lp = sub.add_parser("load-positions", help="upsert a positions CSV")
     lp.add_argument("path", type=Path)
+
+    st = sub.add_parser("stress", help="all scenarios for one date")
+    st.add_argument("--portfolio", default="MAIN")
+    st.add_argument("--universe", default="from_1999")
+    st.add_argument("--as-of", type=date.fromisoformat, required=True)
     return parser
 
 
@@ -60,6 +66,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"positions rows written: {n}")
             return 0
         params = engine.RiskParams.load()
+        if args.command == "stress":
+            return run_stress(conn, args, params, version)
         if args.command == "run":
             res = engine.run(
                 conn,
@@ -123,6 +131,79 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"backfill complete: {done} runs {args.method} "
             f"{args.start}..{args.end} in {elapsed:.0f}s"
+        )
+    return 0
+
+
+def run_stress(
+    conn: psycopg.Connection[Any],
+    args: argparse.Namespace,
+    params: engine.RiskParams,
+    version: str | None,
+) -> int:
+    """Evaluate every scenario on ``as_of`` and record the run."""
+    from risk_engine.risk.positions import load_snapshot
+
+    scen = stress.ScenarioSet.load()
+    rm, specs, meta = engine.prepare(conn, args.universe, args.as_of)
+    positions, positions_as_of = load_snapshot(conn, args.portfolio, args.as_of)
+    fhs_res = engine.run(
+        conn,
+        args.portfolio,
+        args.as_of,
+        method="fhs",
+        universe_name=args.universe,
+        params=params,
+        prepared=(rm, specs, meta),
+    )
+    es_today = next(
+        m.value for m in fhs_res.measures if m.measure == "es" and m.scope_type == "portfolio"
+    )
+    results = stress.run_all(
+        rm,
+        positions,
+        specs,
+        scen,
+        lam=params.lam,
+        window=params.window_days,
+        warmup=params.warmup_days,
+        es_alpha=params.es_confidence,
+        es_today=es_today,
+    )
+    run_id = stress_record.write(
+        conn,
+        portfolio_code=args.portfolio,
+        universe=args.universe,
+        as_of=args.as_of,
+        positions_as_of=positions_as_of,
+        portfolio_value=fhs_res.portfolio_value,
+        es_975=es_today,
+        scenario_sha256=scen.sha256,
+        params={
+            "lambda": params.lam,
+            "window_days": params.window_days,
+            "warmup_days": params.warmup_days,
+            "permutations": scen.permutations,
+            "seed": scen.seed,
+            "risk_params_sha256": params.sha256,
+            **meta,
+        },
+        results=results,
+        code_version=version,
+    )
+    print(
+        f"stress_run_id={run_id} as_of={args.as_of} universe={args.universe} "
+        f"pv={fhs_res.portfolio_value:,.0f} es_975={es_today:,.0f}"
+    )
+    for r in results:
+        extra = (
+            f" worst_day={r.worst_day} ({r.worst_day_loss:,.0f})"
+            if r.worst_day_loss is not None
+            else ""
+        )
+        print(
+            f"  {r.kind:12} {r.scenario:24} loss={r.loss:14,.0f}  "
+            f"x_es={r.loss / es_today:6.2f}{extra}"
         )
     return 0
 
