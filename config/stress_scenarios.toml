@@ -18,6 +18,11 @@ start = 2020-02-19
 end = 2020-03-23
 why = "fastest drawdown on record; oil collapse, USD squeeze, rates to zero"
 
+[historical.covid_oil_2020]
+start = 2020-02-19
+end = 2020-04-21
+why = "covid window extended through the April oil collapse; the safe-haven rates offset of covid_2020 disappears"
+
 [historical.wti_negative_2020]
 start = 2020-04-17
 end = 2020-04-20

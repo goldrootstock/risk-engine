@@ -173,6 +173,7 @@ EXPECTED_STRESS_HISTORICAL = {
     "lehman_2008": (date(2008, 9, 12), date(2008, 10, 10)),
     "gfc_worst_week_2008": (date(2008, 10, 3), date(2008, 10, 10)),
     "covid_2020": (date(2020, 2, 19), date(2020, 3, 23)),
+    "covid_oil_2020": (date(2020, 2, 19), date(2020, 4, 21)),
     "wti_negative_2020": (date(2020, 4, 17), date(2020, 4, 20)),
     "rates_2022": (date(2022, 1, 3), date(2022, 10, 21)),
     "rates_june_2022": (date(2022, 6, 9), date(2022, 6, 14)),

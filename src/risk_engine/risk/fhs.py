@@ -115,8 +115,12 @@ def evaluate(
     es_alpha: float,
     stressed_window: int,
     vol: str = "ewma",
+    horizon: int = 1,
 ) -> FhsResult:
     """FHS ES/VaR for the last date of ``rm`` with today's positions.
+
+    ``horizon`` > 1 sums ``horizon`` consecutive residual vectors (block bootstrap) instead
+    of assuming sqrt-of-time scaling; the stressed window is always evaluated at one day.
 
     Steps: standardise every factor by its own forecast volatility; take the last ``window``
     residual vectors (date-wise, jointly); rescale by today's volatility; map to P&L with
@@ -138,6 +142,12 @@ def evaluate(
         return to_loss(pnl)  # (n, k instruments)
 
     recent = pool.iloc[-window:]
+    if horizon > 1:
+        # h-day block bootstrap: sum h consecutive residual vectors (date-wise joint sampling
+        # preserved), scaled by today's sigma held constant over the horizon (note 06 [A]).
+        arr = recent.to_numpy(dtype="float64")
+        blocks = np.array([arr[i : i + horizon].sum(axis=0) for i in range(len(arr) - horizon + 1)])
+        recent = pd.DataFrame(blocks, index=recent.index[horizon - 1 :], columns=recent.columns)
     lbi = losses_for(recent)
     port = lbi.sum(axis=1)
     tm = tail_measures(port, var_alpha, es_alpha)
