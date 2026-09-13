@@ -191,3 +191,5 @@ class InstrumentSpec:
     ticker: str
     quote_type: Literal["price", "yield"]
     return_type: Literal["log", "absolute"]
+    currency: str = "USD"
+    multiplier: float = 1.0
