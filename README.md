@@ -35,7 +35,7 @@ model trustworthy?*
 ## Reproduce
 
 ```bash
-python3.12 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
+python3.12 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev,app]"
 cp .env.example .env            # add FRED_API_KEY and EIA_API_KEY (free)
 docker compose up -d && python -m risk_engine.data.migrate
 python -m risk_engine.data.etl sync                                   # 31 series, full history
@@ -44,6 +44,8 @@ python -m risk_engine.risk backfill --from 1999-01-05 --to 2026-09-09 --universe
 python -m risk_engine.backtest run --universe from_1999 --portfolio MAIN
 python -m risk_engine.risk stress --as-of 2026-09-09 --universe from_1999 --portfolio MAIN
 make check                                                            # ruff, mypy, pytest (needs the DB)
+make api                                                              # read-only FastAPI on :8000 (/docs)
+make dashboard                                                        # Streamlit on :8501
 ```
 
 Raw vendor data is never committed; the ETL re-downloads it from the original sources.
@@ -78,7 +80,7 @@ book in which energy carries 82 % of ES. Full discussion: model document §7.
 ```
 config/          universe, sample sets, risk / backtest / stress parameters (all pinned by tests)
 db/migrations/   plain-SQL schema, one transaction each
-src/risk_engine/ data (ETL), risk (returns, FHS, parametric, MC, stress), backtest
+src/risk_engine/ data (ETL), risk (returns, FHS, parametric, MC, stress), backtest, app (read-only API + dashboard)
 docs/design/     numbered design notes — proposals, counter-proposals, decisions
 docs/            decisions.md (every parameter with its source), walkthrough.md, model_document.md
 ```

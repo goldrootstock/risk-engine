@@ -232,3 +232,41 @@ raw 초과율 1.02 %, 정식(지평 일치) 0.81 %. 정식이 더 보수적으�
 2. **"상관이 깨지면 ES 가 줄어야 하지 않나(분산 효과)?"** — 롱 온리 장부라면 그렇다. MAIN 은 WTI 롱 − Brent 숏이라 두 유가의 상관이 헤지다. 상관이 깨지면 헤지가 사라져 ES 가 1.74배가 된다. 2020-04 WTI 만 음수가 된 날이 그 실례다.
 3. **"가장 큰 스트레스 손실이 왜 유가가 아니라 금리인가?"** — ES 의 82 % 가 에너지지만 그건 하루 위험이다. 2022 년 10개월 누적 금리 상승은 국채 롱 130 M 에 17.6 M 손실을 냈다. 하루 위험과 경로 누적은 다른 질문이다.
 4. **"시나리오 12개는 누가 골랐나?"** — 내가 골랐고 각 행에 이유를 적었다. 그 선택 자체가 모델 가정이라 파일 해시를 실행에 남기고, 바꾸면 값 고정 테스트가 깨진다.
+
+
+## 6. 대시보드·API — `risk_engine.app` (노트 08)
+
+**흐름.** `queries.py` 의 함수 여섯 개가 전부다: `catalog`(어떤 시계열이 있나), `headline_series`
+(날짜별 VaR·ES·stressed ES), `latest_run`(기준일 이하 최신 run + 종목별 component ES),
+`backtest_latest`(최신 배치의 창 표 + 정식·raw·√h 합계), `backtest_days`, `stress_latest`.
+`api.py` 는 이를 GET 엔드포인트로 감싸고(`/es`, `/var`, `/runs/latest`, `/series`,
+`/backtest`, `/backtest/days`, `/stress`, `/catalog`, `/health`), `dashboard.py` 는 같은 함수를
+`st.cache_data` 로 60 초 캐시해 네 구역(헤드라인, 시계열+손익, 백테스트, 스트레스)으로 그린다.
+
+**판단.** 계산·기록은 CLI 만. 서빙 계층의 연결은 `default_transaction_read_only = on` 으로 열어
+PostgreSQL 이 쓰기를 거부한다. 응답에는 항상 `run_id`·`risk_params_sha256`·`code_version` 을 싣는다.
+손익 차트의 −VaR 띠가 부호를 뒤집는 두 곳 중 두 번째다(CLAUDE.md §2).
+
+**틀릴 수 있는 곳.**
+- `psycopg.connect(url, options=...)` 는 URL 의 `options` 를 덮어쓴다 — 병합해야 한다
+  (`conninfo_to_dict`). 스모크 테스트가 공용 DB 를 읽는 사고로 발견.
+- "최신 배치" 는 `created_at` 동일성에 기댄다. 한 배치를 두 트랜잭션으로 나누어 쓰면 깨진다 —
+  `record.write` 가 단일 트랜잭션이라는 것이 전제.
+- `latest_run(tag=None)` 은 같은 날짜의 adhoc run 을 배치 run 보다 우선할 수 있다(run_id 역순).
+  API 의 `/es` 기본이 이것이므로 배치만 원하면 `tag=daily_batch` 를 준다.
+
+**Python 메모 (Java 대비).** FastAPI 의 `Depends` 는 생성자 주입이 아니라 함수 주입이다:
+`get_conn` 이 제너레이터(yield)라 요청 뒤 정리가 `finally` 처럼 실행된다.
+`app.dependency_overrides[get_conn] = ...` 이 테스트의 Mockito 역할. `Annotated[T, Query(...)]`
+는 타입에 메타데이터를 붙이는 표준 방법이다(자바 애노테이션과 비슷하지만 타입 힌트의 일부).
+
+**면접 Q&A.**
+1. *왜 API 에 POST 가 없나?* — 결과가 어떤 코드·설정에서 나왔는지의 추적(`params`, `code_version`)이
+   CLI 경로에만 있고, 화면에서 재계산하면 "결과 보고 파라미터 고르기" 가 가능해진다(노트 00).
+   DB 연결 자체를 읽기 전용으로 열어 코드가 아니라 DB 가 보장한다.
+2. *API 와 대시보드 숫자가 다르면?* — 같은 `queries` 함수를 쓰므로 캐시 TTL 60 초 안의 지연이
+   유일한 원인이다.
+3. *ES 를 어떤 run 에서 읽나?* — 기준일 이하 최신, 같은 날짜면 `run_id` 큰 쪽. 응답에 run_id 가
+   있어 재현 가능.
+4. *대시보드 테스트는 어떻게?* — `streamlit.testing.v1.AppTest` 로 헤드리스 렌더링. 예외 없음만이
+   아니라 시드한 값이 화면에 있는지 검사한다 — 그래서 옵션 덮어쓰기 결함을 잡았다.
