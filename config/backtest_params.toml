@@ -1,0 +1,20 @@
+# Backtest parameters (design note 06). Pinned by tests/test_config_pins.py; sha256 recorded
+# in backtest_summaries.params. Changing a value is a decision made in the same commit as the
+# test table — never after seeing a result.
+
+[window]
+days = 250                 # Basel / FRTB: 250 business days (12 months)
+
+[exceptions]
+confidence = 0.99          # VaR level whose exceptions are counted (Basel)
+significance = 0.05        # Kupiec / Christoffersen rejection level
+
+[traffic_light]            # BCBS 1996 §III, 250-day exception counts at 99%
+yellow_from = 5
+red_from = 10
+
+[pla]                      # BCBS 2019 MAR32.11-32.13
+spearman_green = 0.80
+spearman_amber = 0.70
+ks_green = 0.09
+ks_amber = 0.12

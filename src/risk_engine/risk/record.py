@@ -16,10 +16,11 @@ from risk_engine.risk.engine import RunResult
 
 INSERT_RUN = """
 INSERT INTO risk_runs (portfolio_code, as_of_date, positions_as_of, method, horizon_days,
-                       window_days, n_scenarios, portfolio_value, params, tag, code_version)
+                       window_days, n_scenarios, portfolio_value, params, tag, code_version,
+                       universe)
 VALUES (%(portfolio_code)s, %(as_of_date)s, %(positions_as_of)s, %(method)s, %(horizon_days)s,
         %(window_days)s, %(n_scenarios)s, %(portfolio_value)s, %(params)s, %(tag)s,
-        %(code_version)s)
+        %(code_version)s, %(universe)s)
 RETURNING run_id
 """
 
@@ -56,6 +57,7 @@ def write(
         "params": Jsonb(result.params, dumps=lambda o: json.dumps(o, default=str)),
         "tag": result.tag,
         "code_version": code_version_,
+        "universe": str(result.params.get("universe", "default")),
     }
     with conn.transaction():
         got = conn.execute(INSERT_RUN, row).fetchone()

@@ -153,3 +153,17 @@ def test_positions_main_is_pinned() -> None:
     assert {r["ticker"]: float(r["quantity"]) for r in rows} == EXPECTED_POSITIONS_MAIN
     assert {r["portfolio_code"] for r in rows} == {"MAIN"}
     assert {r["as_of_date"] for r in rows} == {"1999-01-04"}  # before every sample set start
+
+
+EXPECTED_BACKTEST_PARAMS = {
+    "window": {"days": 250},
+    "exceptions": {"confidence": 0.99, "significance": 0.05},
+    "traffic_light": {"yellow_from": 5, "red_from": 10},
+    "pla": {"spearman_green": 0.80, "spearman_amber": 0.70, "ks_green": 0.09, "ks_amber": 0.12},
+}
+
+
+def test_backtest_params_are_pinned() -> None:
+    with (REPO_ROOT / "config" / "backtest_params.toml").open("rb") as fh:
+        cfg = tomllib.load(fh)
+    assert cfg == EXPECTED_BACKTEST_PARAMS, "config/backtest_params.toml changed: update the table"

@@ -171,9 +171,10 @@ FK 삭제 정책은 기본값 `RESTRICT`. 상품을 지우려면 가격·포지�
 
 | 항목 | 시점 | 비고 |
 |---|---|---|
-| `backtest_results` | 2주차 | (run_id, realized_pnl, breach 여부). Kupiec 코드와 같이 설계 |
+| `backtest_results` | **완료 (0006, 노트 06)** | run_id · hpl · rtpl · var_99 · es_975 · exception · attribution. 창 통계는 `backtest_summaries` |
 | `portfolios` 테이블 | 메타가 필요해질 때 | 지금은 `portfolio_code` + USD 고정 |
-| `risk_runs.data_as_of` · `started_at`/`finished_at` | 엔진 노트 | 실행이 읽은 가격의 최신 `loaded_at`. `etl_runs` 와는 FK 가 아니라 시간으로 조인(노트 03 §12, 2026-09-13 예약) |
+| `risk_runs.universe` | **완료 (0006)** — `params.universe` 에서 승격 (§9-2 규칙) | 두 집합 병행으로 모든 조회가 거른다 |
+| `risk_runs.data_as_of` · `started_at`/`finished_at` | 엔진 노트 (`params.data_last_date` 로 대체 중) | 실행이 읽은 가격의 최신 `loaded_at`. `etl_runs` 와는 FK 가 아니라 시간으로 조인(노트 03 §12, 2026-09-13 예약) |
 | 스트레스 결과 테이블 | 3~4주차 | 시나리오명 → P&L 형태라 `risk_runs` 와 모양이 다름 |
 | 수익률·달력 테이블 | 안 만듦 | 파생값. 달력 정렬(교집합 vs forward-fill)은 수익률 빌더의 옵션 |
 | 거래 원장 | 안 만듦 | §2-3 |

@@ -99,3 +99,16 @@
 | Parametric 델타 | FX q·S, 에너지 q, 국채 −DV01 | `parametric.deltas` | 노트 04 §4 의 1 차 계수 | 완전 재가격: Parametric 의 정의에 어긋남 | Parametric 과 MC 의 차이 = 비선형성(FX 지수식) |
 | 포트폴리오 가치 | FX q·S + 에너지 q·P + 국채 액면 | `fhs.portfolio_value` | 국채는 par 채권 가정이라 액면 = 시가 | — | `v_risk_headline` 의 비율 분모 |
 | 초기 포트폴리오 MAIN | `config/positions_main.csv` 16 포지션, 2026-09-09 시가 ≈ 177 M USD | `positions` | [임의] 자산군 4 개에 롱·숏 혼합. 국채 롱 130 M, FX 롱·숏, 에너지 롱·숏 | — | 모든 리스크 수치 |
+
+## 4. 백테스트 (노트 06)
+
+| 이름 | 값 | 쓰이는 곳 | 근거 | 검토한 대안과 기각 이유 | 바꾸면 달라지는 것 |
+|---|---|---|---|---|---|
+| 창 길이 | 250 영업일, 비중첩 블록 + 오늘로 끝나는 꼬리 창 | `backtest_params.toml [window]` | [출처] BCBS (1996) 백테스트 감독 체계, FRTB MAR99 — 12개월 | 롤링 일별 창: 통계 수 3,000+ 로 해석 불가 | 창 수, 존 판정 단위 |
+| 초과 정의 | −HPL > VaR 99 % | `runner.backtest` | [출처] BCBS 1996 §II: 포지션 고정 가상 손익 | 실제 손익: 우리 장부는 스냅샷이라 동일 | — |
+| HPL 의 t+1 | 정렬된 다음 관측일 (휴일 건너뜀) | `hpl.daily_pnl` | 교집합 표본의 정의. Basel 도 다음 거래일 손익을 1일 VaR 에 비교한다 | 달력일 기준: 결측 처리 필요 | 63 초과 중 19건이 gap > 1일(주말·휴일 뒤). 과대 판정 가능성 — 모델 문서 한계 |
+| RTPL 정의 | 선형 델타 손익 (노트 05 §4 의 δ) | `hpl.daily_pnl`, `statistics.pla` | FRTB PLA 는 리스크 모델 손익 vs 실제 손익. 우리 FHS 가 정확 매핑을 쓰므로 정확식 RTPL 은 HPL 과 같아 검정력 0. 선형 델타는 "매핑 비선형성" 을 잰다 | 정확 매핑: 무의미 | **실측: ρ = 1.000, KS ≈ 0.01 — 일별 규모에서 비선형성이 없어 PLA 가 사실상 항상 녹색.** 이 정의의 검정력은 낮다 (정직하게 기록). 진짜 PLA 는 FO 가격모델이 따로 있을 때 의미가 있다 |
+| Kupiec 유의수준 | 5 % 양측 (p-value < 0.05 기각) | `statistics.kupiec_pof` | [출처] Kupiec (1995) 관행 | 단측(초과 과다만): 보수적 모델(초과 과소)을 못 잡음 | 꼬리 창 0 초과가 p=0.025 로 "기각" 되는 것이 그 예 — 보수 쪽 기각 |
+| Basel 존 | 0~4 녹 · 5~9 황 · ≥10 적 | `statistics.traffic_light` | [출처] BCBS (1996) §III 표 | — | — |
+| PLA 임계값 | Spearman > 0.80 / < 0.70, KS < 0.09 / > 0.12 | `statistics.pla` | [출처] BCBS (2019) MAR32.11-32.13 | — | — |
+| 귀속 | 초과일 상위 5 상품 손실 + 합 | `hpl.top_attribution` | JK [D]: 군집의 원인 설명 | 전 상품 저장: JSONB 비대 | — |

@@ -58,6 +58,7 @@ def test_upgrade_creates_tables_and_is_idempotent(db_conn: psycopg.Connection[An
         "0003_instrument_vocab",
         "0004_etl_runs",
         "0005_rates_to_fred",
+        "0006_backtests",
     ]
     expected = {
         "schema_migrations",
@@ -67,6 +68,9 @@ def test_upgrade_creates_tables_and_is_idempotent(db_conn: psycopg.Connection[An
         "risk_measure_types",
         "risk_runs",
         "risk_measures",
+        "etl_runs",
+        "backtest_results",
+        "backtest_summaries",
     }
     assert expected <= _table_names(db_conn)
 
