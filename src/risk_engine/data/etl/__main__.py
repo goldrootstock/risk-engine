@@ -113,6 +113,7 @@ def run_sync(args: argparse.Namespace, settings: Settings) -> int:
         "thresholds_sha256": thresholds_sha256(thresholds_path),
     }
     problems = 0
+    handled = 0
     # autocommit: every conn.transaction() below is a real transaction committed per series.
     # Without it psycopg opens an implicit transaction at the first SELECT and nothing is
     # committed until the connection closes.
@@ -123,7 +124,9 @@ def run_sync(args: argparse.Namespace, settings: Settings) -> int:
             if args.ticker:
                 specs = {k: v for k, v in specs.items() if v.ticker in args.ticker}
             if not specs:
+                log.warning("%s: no active instruments match the filter; skipped", name)
                 continue
+            handled += len(specs)
             start = _start_for(conn, specs, args)
             problems += _sync_source(
                 conn,
@@ -136,6 +139,9 @@ def run_sync(args: argparse.Namespace, settings: Settings) -> int:
                 version,
                 thresholds_path,
             )
+    if handled == 0:
+        print("error: no series selected (check --source / --ticker)", file=sys.stderr)
+        return EXIT_CONFIG_ERROR
     return EXIT_SKIPPED if problems else EXIT_OK
 
 

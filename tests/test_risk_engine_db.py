@@ -92,3 +92,16 @@ def test_run_all_methods_and_record(
         and len(params[0]["risk_params_sha256"]) == 64
     )
     assert params[0]["stressed_window"][0] < params[0]["stressed_window"][1]
+
+
+def test_load_positions_rejects_unknown_ticker(
+    db_conn: psycopg.Connection[Any], tmp_path: Path
+) -> None:
+    """An unknown ticker must fail loudly, not report rows written (silent-success audit)."""
+    upgrade(db_conn, MIGRATIONS_DIR)
+    upsert_instruments(db_conn, read_universe(REPO_ROOT / "config" / "universe.csv"))
+    csv = tmp_path / "bad.csv"
+    csv.write_text("portfolio_code,as_of_date,ticker,quantity\nT,2019-01-01,NOPE,1\n")
+    with pytest.raises(LookupError, match="NOPE"):
+        load_positions_csv(db_conn, csv)
+    assert db_conn.execute("SELECT count(*) FROM positions").fetchone() == (0,)

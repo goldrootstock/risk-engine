@@ -158,12 +158,20 @@ def load_inputs(
     positions, _ = load_snapshot(conn, portfolio_code, last)
     idx = rm.changes.index
     pnls: list[DailyPnl] = []
+    skipped: list[date] = []
     for run in runs:
         t = pd.Timestamp(run.as_of)
         pos = int(idx.get_indexer(pd.DatetimeIndex([t]))[0])
         if pos < 0 or pos + 1 >= len(idx):
+            skipped.append(run.as_of)
             continue
         pnls.append(daily_pnl(rm, t, positions, specs))
+    # The last run can never be backtested (no t+1 yet); anything else missing is a data gap
+    # that must be visible, never silently dropped.
+    if len(skipped) > 1 or (skipped and skipped[0] != last):
+        raise ValueError(
+            f"{len(skipped)} run dates have no aligned next observation: {skipped[:5]}"
+        )
     return runs, pnls
 
 

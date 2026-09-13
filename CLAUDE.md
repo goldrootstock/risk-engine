@@ -55,6 +55,23 @@ and kept as the record of *why*. The notes are part of the deliverable.
 - `ruff` and `mypy` are pinned to exact versions in `pyproject.toml` so the local gate and CI
   cannot drift; bump them deliberately in their own commit.
 
+### Changing a test's expectation
+
+A commit that changes a test's expected value, tolerance, threshold or seed must say in its
+message **why the previous expectation was wrong** (a mis-stated theorem, a tolerance
+smaller than the effect being tested, a random draw that was a known false positive). A
+commit that only changes the number is forbidden: "the test failed, so I changed the test"
+has the same shape as the pattern design note 00 §3 warns about, and only the recorded
+reason distinguishes a correction from a fit. Retroactive record of past cases:
+`docs/decisions.md` §5.
+
+### Exit codes and pipes
+
+Commands are designed to never report success on failure (ETL exit 2 on any skipped
+series; every CLI propagates exceptions). A shell pipe defeats this: `cmd | tail` returns
+tail's exit code. `make` and the pre-commit hook run bash with `-o pipefail`; do not pipe a
+command whose exit code matters, and never read "exit=0" off a pipeline.
+
 ### Reporting after any change to files or the repository
 
 Every report that ends a task which wrote files or touched git closes with the verbatim

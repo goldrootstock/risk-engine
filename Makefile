@@ -1,4 +1,8 @@
 # Local gate — identical to the CI job. Run before every commit: `make check`.
+# bash with -o pipefail: a failing command inside a pipe fails the target (a plain shell
+# pipe reports the exit code of the LAST command and hid a crashed backfill on 2026-09-13).
+SHELL := /bin/bash
+.SHELLFLAGS := -eu -o pipefail -c
 # Nothing here modifies files; `make fmt` is the only write-mode target and is explicit.
 
 .PHONY: check lint typecheck test fmt db migrate

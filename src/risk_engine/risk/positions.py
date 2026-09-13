@@ -40,7 +40,7 @@ def load_positions_csv(conn: psycopg.Connection[Any], path: Path) -> int:
         rows = list(csv.DictReader(fh))
     with conn.transaction():
         for r in rows:
-            conn.execute(
+            cur = conn.execute(
                 "INSERT INTO positions (portfolio_code, as_of_date, instrument_id, quantity) "
                 "SELECT %(portfolio_code)s, %(as_of_date)s, instrument_id, %(quantity)s "
                 "FROM instruments WHERE ticker = %(ticker)s "
@@ -48,4 +48,6 @@ def load_positions_csv(conn: psycopg.Connection[Any], path: Path) -> int:
                 "DO UPDATE SET quantity = EXCLUDED.quantity, loaded_at = now()",
                 r,
             )
+            if cur.rowcount != 1:  # unknown ticker: INSERT ... SELECT wrote nothing
+                raise LookupError(f"ticker {r['ticker']!r} is not in instruments; nothing written")
     return len(rows)
