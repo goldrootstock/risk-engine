@@ -26,7 +26,7 @@ from pathlib import Path
 from risk_engine.data.etl.contract import RawFile
 
 #: File extension per source: the format is a property of the vendor, not of the payload.
-EXTENSIONS: dict[str, str] = {"ecb": "zip", "ustreasury": "csv", "eia": "json"}
+EXTENSIONS: dict[str, str] = {"ecb": "zip", "fred": "json", "eia": "json"}
 MANIFEST_NAME = "manifest.jsonl"
 FETCHED_AT_FORMAT = "%Y%m%dT%H%M%SZ"
 

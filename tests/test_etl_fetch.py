@@ -10,7 +10,7 @@ import pytest
 
 from risk_engine.data.etl.sources.ecb import HIST_URL, SCOPE_ALL, EcbSource
 from risk_engine.data.etl.sources.eia import REDACTED, EiaSource, scrub_api_key
-from risk_engine.data.etl.sources.ustreasury import UsTreasurySource, years_to_fetch
+from risk_engine.data.etl.sources.fred import LIMIT, OBSERVATIONS_PATH, FredSource
 
 
 def _client(handler) -> httpx.Client:  # type: ignore[no-untyped-def]
@@ -62,24 +62,6 @@ def test_ecb_fetch_rejects_non_zip_body_with_200() -> None:
         EcbSource(client=_client(handler)).fetch(["USD"], None, None)
 
 
-def test_treasury_years_to_fetch_overlap() -> None:
-    assert years_to_fetch(date(2026, 1, 5), date(2026, 9, 13), overlap_days=14) == [2025, 2026]
-    assert years_to_fetch(date(2026, 3, 1), date(2026, 9, 13), overlap_days=14) == [2026]
-    assert years_to_fetch(None, date(1991, 6, 1))[:2] == [1990, 1991]
-
-
-def test_treasury_fetch_one_file_per_year() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        year = request.url.path.split("/")[-2]
-        return httpx.Response(200, content=f'Date,"10 Yr"\n01/02/{year},1.0\n'.encode())
-
-    files = UsTreasurySource(client=_client(handler)).fetch(
-        ["10 Yr"], date(2025, 12, 20), date(2026, 1, 10)
-    )
-    assert [f.scope for f in files] == ["2025", "2026"]
-    assert all(f.source == "ustreasury" and f.page == 1 for f in files)
-
-
 def test_eia_scrub_removes_key_from_bytes() -> None:
     body = b'{"request":{"params":{"api_key":"SECRET123"}},"response":{"data":[]}}'
     out = scrub_api_key(body, "SECRET123")
@@ -110,7 +92,8 @@ def test_eia_fetch_paginates_and_scrubs() -> None:
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params["api_key"] == key
+        assert request.headers["X-Api-Key"] == key  # header auth, never the query string
+        assert "api_key" not in request.url.params
         return httpx.Response(200, json=pages[request.url.params.get("offset", "0")])
 
     src = EiaSource(api_key=key, client=_client(handler))
@@ -120,3 +103,38 @@ def test_eia_fetch_paginates_and_scrubs() -> None:
         assert key.encode() not in f.content
         assert json.loads(f.content)["request"]["params"]["api_key"] == REDACTED
         assert "?" not in f.url and "api_key" not in f.url
+
+
+def test_fred_fetch_one_request_per_series_without_query_in_url() -> None:
+    seen: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url)
+        return httpx.Response(
+            200,
+            json={
+                "count": 2,
+                "observations": [
+                    {"date": "2020-04-20", "value": "0.63"},
+                    {"date": "2020-04-21", "value": "."},
+                ],
+            },
+        )
+
+    files = FredSource(api_key="SECRET", client=_client(handler)).fetch(
+        ["DGS10", "DGS2"], date(2020, 4, 20), date(2020, 4, 21)
+    )
+    assert [u.path for u in seen] == [OBSERVATIONS_PATH, OBSERVATIONS_PATH]
+    assert seen[0].params["series_id"] == "DGS10" and seen[0].params["api_key"] == "SECRET"
+    assert seen[0].params["limit"] == str(LIMIT)
+    assert seen[0].params["observation_start"] == "2020-04-20"
+    assert [(f.scope, f.page, f.pages) for f in files] == [("DGS10", 1, 1), ("DGS2", 1, 1)]
+    assert all("?" not in f.url and "SECRET" not in f.url for f in files)
+
+
+def test_fred_fetch_rejects_payload_without_observations() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"error_code": 400, "error_message": "Bad Request"})
+
+    with pytest.raises(ValueError):
+        FredSource(api_key="k", client=_client(handler)).fetch(["DGS10"], None, None)

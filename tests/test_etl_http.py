@@ -85,3 +85,16 @@ def test_default_client_identifies_the_tool() -> None:
     with client_for(None, POLICY) as client:
         assert client.headers["User-Agent"] == USER_AGENT
     assert "risk-engine/0.1" in USER_AGENT
+
+
+def test_exception_messages_never_contain_the_query_string() -> None:
+    client = _client(iter([httpx.Response(404)]))
+    with pytest.raises(httpx.HTTPStatusError) as info:
+        fetch_with_retry(client, URL, policy=POLICY, sleep=lambda s: None)
+    assert "SECRET" not in str(info.value) and "api_key" not in str(info.value)
+
+    client = _client(iter([httpx.ReadTimeout("slow")] * POLICY.attempts))
+    with pytest.raises(RetryExhaustedError) as info2:
+        fetch_with_retry(client, URL, policy=POLICY, sleep=lambda s: None)
+    chain = f"{info2.value} / {info2.value.__cause__}"
+    assert "SECRET" not in chain and "?" not in chain

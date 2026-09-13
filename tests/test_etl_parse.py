@@ -12,7 +12,7 @@ import pytest
 from risk_engine.data.etl.contract import PRICE_COLUMNS, RawFile
 from risk_engine.data.etl.sources.ecb import CSV_MEMBER, HIST_URL, SCOPE_ALL, EcbSource
 from risk_engine.data.etl.sources.eia import EiaSource
-from risk_engine.data.etl.sources.ustreasury import UsTreasurySource
+from risk_engine.data.etl.sources.fred import FredSource
 
 FIXTURES = Path(__file__).parent / "fixtures" / "etl"
 FETCHED_AT = datetime(2026, 9, 12, 10, 0, tzinfo=UTC)
@@ -47,21 +47,19 @@ def test_parse_ecb_long_frame() -> None:
     assert not (frame["close"] == 0).any()
 
 
-def test_parse_ustreasury_selects_quoted_columns() -> None:
+def test_parse_fred_drops_missing_observations() -> None:
+    body = (FIXTURES / "fred_dgs10_2020-03_04.json").read_bytes()
     raw = RawFile(
-        "ustreasury",
-        "2020",
-        "https://home.treasury.gov/.../2020/all",
-        (FIXTURES / "ustreasury_daily_par_yield_2020-03_04.csv").read_bytes(),
-        FETCHED_AT,
+        "fred", "DGS10", "https://api.stlouisfed.org/fred/series/observations", body, FETCHED_AT
     )
-    frame = UsTreasurySource().parse(raw)
+    frame = FredSource(api_key="x").parse(raw)
     _assert_contract(frame)
-    ten = frame[frame["source_id"] == "10 Yr"]
-    assert len(ten) == 43
-    assert ten["price_date"].iloc[0] == pd.Timestamp("2020-03-02")  # MM/DD/YYYY parsed
-    assert ten["close"].iloc[0] == pytest.approx(1.10)
-    assert "4 Mo" not in set(frame["source_id"])  # column absent in 2020 -> no rows, no error
+    assert set(frame["source_id"]) == {"DGS10"}
+    assert len(frame) == 43  # 44 observations, 2020-04-10 (Good Friday) is "."
+    by_date = frame.set_index("price_date")["close"]
+    assert by_date[pd.Timestamp("2020-03-02")] == pytest.approx(1.10)
+    assert by_date[pd.Timestamp("2020-04-20")] == pytest.approx(0.63)
+    assert pd.Timestamp("2020-04-10") not in by_date.index
 
 
 def test_parse_eia_strings_and_negative_value() -> None:

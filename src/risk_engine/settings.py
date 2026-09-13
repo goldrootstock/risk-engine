@@ -24,12 +24,14 @@ class Settings:
         database_url: PostgreSQL connection URL, e.g. ``postgresql://risk:risk@localhost:5432/risk``.
         migrations_dir: Directory containing ``NNNN_name.sql`` migration files.
         eia_api_key: EIA API v2 key (``EIA_API_KEY``); ``None`` until the EIA source is used.
+        fred_api_key: FRED API key (``FRED_API_KEY``); same handling as the EIA key.
             Never logged, never written to the cache.
     """
 
     database_url: str
     migrations_dir: Path = DEFAULT_MIGRATIONS_DIR
     eia_api_key: str | None = None
+    fred_api_key: str | None = None
 
 
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
@@ -58,4 +60,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
     migrations_dir = Path(env.get("MIGRATIONS_DIR", "").strip() or DEFAULT_MIGRATIONS_DIR)
     eia_api_key = env.get("EIA_API_KEY", "").strip() or None
-    return Settings(database_url=url, migrations_dir=migrations_dir, eia_api_key=eia_api_key)
+    fred_api_key = env.get("FRED_API_KEY", "").strip() or None
+    return Settings(
+        database_url=url,
+        migrations_dir=migrations_dir,
+        eia_api_key=eia_api_key,
+        fred_api_key=fred_api_key,
+    )

@@ -57,6 +57,7 @@ def test_upgrade_creates_tables_and_is_idempotent(db_conn: psycopg.Connection[An
         "0002_risk_runs",
         "0003_instrument_vocab",
         "0004_etl_runs",
+        "0005_rates_to_fred",
     ]
     expected = {
         "schema_migrations",
@@ -263,3 +264,28 @@ def test_headline_view_guards_zero_portfolio_value(migrated: psycopg.Connection[
         "SELECT var_99, var_99_frac FROM v_risk_headline WHERE run_id = %s", (run,)
     ).fetchone()
     assert row == (50_000.0, None)
+
+
+def test_0005_moves_rates_to_fred_keeping_instrument_ids(migrated: psycopg.Connection[Any]) -> None:
+    """Replaying 0005 on a legacy row: source/source_id change, instrument_id and prices stay."""
+    row = migrated.execute(
+        "INSERT INTO instruments (source, ticker, source_id, name, asset_class, instrument_type, "
+        "quote_type, return_type, currency) VALUES ('ustreasury', 'UST_10Y', '10 Yr', "
+        "'U.S. Treasury par yield 10-year', 'rates', 'yield_curve', 'yield', 'absolute', 'USD') "
+        "RETURNING instrument_id"
+    ).fetchone()
+    assert row is not None
+    iid = int(row[0])
+    migrated.execute(
+        "INSERT INTO prices (instrument_id, price_date, close, adj_close) "
+        "VALUES (%s, '2020-04-20', 0.63, 0.63)",
+        (iid,),
+    )
+    migrated.execute((MIGRATIONS_DIR / "0005_rates_to_fred.sql").read_bytes())
+    got = migrated.execute(
+        "SELECT source, source_id, name FROM instruments WHERE instrument_id = %s", (iid,)
+    ).fetchone()
+    assert got == ("fred", "DGS10", "U.S. Treasury constant-maturity yield (H.15 via FRED) 10-year")
+    assert migrated.execute(
+        "SELECT count(*) FROM prices WHERE instrument_id = %s", (iid,)
+    ).fetchone() == (1,)

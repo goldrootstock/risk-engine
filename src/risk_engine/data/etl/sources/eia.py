@@ -3,10 +3,12 @@
 JSON, key-authenticated, paginated at 5,000 rows. ``value`` arrives as a **string** with
 trailing zeros dropped (``"12.4"``) and can be negative (``"-36.98"`` on 2020-04-20).
 
-Secrets: the API key travels in the query string and the response **echoes it back** in
-``request.params.api_key`` [확인 2026-09-12]. :meth:`EiaSource.fetch` therefore scrubs the
-key from the body before returning, and :attr:`RawFile.url` never carries the query string.
-The key is never logged.
+Secrets: the key is sent as the ``X-Api-Key`` header, which the API accepts
+[확인 2026-09-13: same 200 response with the header and no ``api_key`` parameter]. A key in
+the query string is echoed back in ``request.params.api_key`` [확인 2026-09-12] and leaks
+through URLs in logs, proxies and exception messages, so the query form is not used.
+:meth:`EiaSource.fetch` still scrubs the key from the body as defence in depth, and
+:attr:`RawFile.url` never carries a query string.
 """
 
 from __future__ import annotations
@@ -77,7 +79,6 @@ class EiaSource:
             for series in source_ids:
                 url = BASE_URL + path_for(series)
                 params: dict[str, str] = {
-                    "api_key": self._api_key,
                     "frequency": "daily",
                     "data[0]": "value",
                     "facets[series][]": series,
@@ -95,7 +96,10 @@ class EiaSource:
                 while True:
                     fetched_at = datetime.now(UTC)
                     response = fetch_with_retry(
-                        client, url, params={**params, "offset": str(offset)}
+                        client,
+                        url,
+                        params={**params, "offset": str(offset)},
+                        headers={"X-Api-Key": self._api_key},
                     )
                     payload = response.json()
                     data = payload.get("response", {}).get("data")

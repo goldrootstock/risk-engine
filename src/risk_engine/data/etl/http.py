@@ -83,6 +83,7 @@ def fetch_with_retry(
     url: str,
     *,
     params: dict[str, str] | None = None,
+    headers: dict[str, str] | None = None,
     policy: RetryPolicy = DEFAULT_RETRY_POLICY,
     sleep: Callable[[float], None] = time.sleep,
 ) -> httpx.Response:
@@ -94,28 +95,33 @@ def fetch_with_retry(
 
     Fail immediately (no retry) on any other 4xx by raising ``httpx.HTTPStatusError``.
     After ``policy.attempts`` retryable failures raise :class:`RetryExhaustedError` from the
-    last error. Never logs the URL query string (EIA keys live there); log the path only.
+    last error. Neither log lines nor exception messages ever contain the query string
+    (FRED keys live there): every message names the URL path only. ``headers`` are
+    per-request (EIA ``X-Api-Key``).
     """
     path = httpx.URL(url).path
     last_error: Exception | None = None
     for attempt in range(1, policy.attempts + 1):
         try:
-            response = client.get(url, params=params)
+            response = client.get(url, params=params, headers=headers)
         except httpx.TransportError as exc:  # timeouts are a subclass of TransportError
-            last_error = exc
+            # Re-create the error with a message that names the path only: httpx's own
+            # message would carry the full URL, query string included.
+            last_error = type(exc)(f"{type(exc).__name__} for {path}")
             log.warning(
                 "GET %s attempt %d/%d: %s", path, attempt, policy.attempts, type(exc).__name__
             )
         else:
             if response.is_success:
                 return response
-            if response.status_code not in RETRY_STATUSES:
-                response.raise_for_status()  # final 4xx: raises HTTPStatusError
-            last_error = httpx.HTTPStatusError(
+            status_error = httpx.HTTPStatusError(
                 f"HTTP {response.status_code} for {path}",
                 request=response.request,
                 response=response,
             )
+            if response.status_code not in RETRY_STATUSES:
+                raise status_error  # final 4xx; message carries the path only
+            last_error = status_error
             log.warning(
                 "GET %s attempt %d/%d: HTTP %d",
                 path,

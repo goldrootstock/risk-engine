@@ -31,7 +31,7 @@ from risk_engine.data.etl.load import (
     upsert_instruments,
     upsert_prices,
 )
-from risk_engine.data.etl.sources import build_sources
+from risk_engine.data.etl.sources import SOURCE_NAMES, build_sources
 from risk_engine.data.etl.validate import load_thresholds, thresholds_sha256, validate
 from risk_engine.settings import Settings, SettingsError, load_settings
 
@@ -58,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sync = sub.add_parser("sync", help="fetch, validate and load series")
-    sync.add_argument("--source", choices=["ecb", "ustreasury", "eia"], help="one source only")
+    sync.add_argument("--source", choices=list(SOURCE_NAMES), help="one source only")
     sync.add_argument("--ticker", action="append", default=[], help="restrict to ticker(s)")
     sync.add_argument(
         "--since",
@@ -81,7 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument("--universe", type=Path, default=Path("config/universe.csv"))
 
     status = sub.add_parser("status", help="per-series first/last date and last load (read-only)")
-    status.add_argument("--source", choices=["ecb", "ustreasury", "eia"])
+    status.add_argument("--source", choices=list(SOURCE_NAMES))
     return parser
 
 
@@ -91,10 +91,15 @@ def run_sync(args: argparse.Namespace, settings: Settings) -> int:
     The only function that writes ``etl_runs``. Returns :data:`EXIT_OK` when every series
     loaded, :data:`EXIT_SKIPPED` when any series was skipped or failed.
     """
-    sources = build_sources(settings.eia_api_key)
+    sources = build_sources(settings.eia_api_key, settings.fred_api_key)
     wanted = [args.source] if args.source else list(sources)
-    if args.source == "eia" and "eia" not in sources:
-        print("error: EIA_API_KEY is not set", file=sys.stderr)
+    missing = [n for n in SOURCE_NAMES if n not in sources and args.source in (None, n)]
+    if missing:
+        print(
+            f"error: API key not set for source(s): {', '.join(missing)} "
+            "(EIA_API_KEY / FRED_API_KEY in .env)",
+            file=sys.stderr,
+        )
         return EXIT_CONFIG_ERROR
     cache = RawCache(args.cache_dir)
     version = code_version()

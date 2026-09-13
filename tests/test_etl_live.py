@@ -10,7 +10,7 @@ from datetime import date
 import pytest
 
 from risk_engine.data.etl.sources.ecb import SCOPE_ALL, EcbSource
-from risk_engine.data.etl.sources.ustreasury import UsTreasurySource
+from risk_engine.data.etl.sources.fred import FredSource
 
 pytestmark = [
     pytest.mark.network,
@@ -28,9 +28,11 @@ def test_live_ecb_zip_parses() -> None:
     assert frame["price_date"].min().date() == date(1999, 1, 4)
 
 
-def test_live_treasury_current_year_parses() -> None:
-    year = date.today().year
-    files = UsTreasurySource().fetch(["10 Yr"], date(year, 1, 1), None)
-    assert [f.scope for f in files] == [str(year)]
-    frame = UsTreasurySource().parse(files[0])
-    assert "10 Yr" in set(frame["source_id"])
+def test_live_fred_dgs10_parses() -> None:
+    key = os.environ.get("FRED_API_KEY")
+    if not key:
+        pytest.skip("FRED_API_KEY not set")
+    (raw,) = FredSource(api_key=key).fetch(["DGS10"], date(2020, 4, 1), date(2020, 4, 30))
+    frame = FredSource(api_key=key).parse(raw)
+    assert set(frame["source_id"]) == {"DGS10"}
+    assert frame.set_index("price_date")["close"][date(2020, 4, 20).isoformat()] == 0.63

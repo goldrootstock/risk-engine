@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 WTI = InstrumentSpec(1, "eia", "RWTC", "WTI", "price", "absolute")
 EURUSD = InstrumentSpec(2, "ecb", "USD", "EURUSD", "price", "log")
-UST10 = InstrumentSpec(3, "ustreasury", "10 Yr", "UST_10Y", "yield", "absolute")
+UST10 = InstrumentSpec(3, "fred", "DGS10", "UST_10Y", "yield", "absolute")
 TH = JumpThresholds(max_abs_return=0.30, max_abs_change_bp=100.0, max_abs_change=10.0)
 TODAY = date(2026, 9, 13)
 

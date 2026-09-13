@@ -1,15 +1,15 @@
 source,ticker,source_id,name,asset_class,instrument_type,quote_type,return_type,currency,multiplier
-ustreasury,UST_1M,1 Mo,U.S. Treasury par yield 1-month,rates,yield_curve,yield,absolute,USD,1
-ustreasury,UST_3M,3 Mo,U.S. Treasury par yield 3-month,rates,yield_curve,yield,absolute,USD,1
-ustreasury,UST_6M,6 Mo,U.S. Treasury par yield 6-month,rates,yield_curve,yield,absolute,USD,1
-ustreasury,UST_1Y,1 Yr,U.S. Treasury par yield 1-year,rates,yield_curve,yield,absolute,USD,1
-ustreasury,UST_2Y,2 Yr,U.S. Treasury par yield 2-year,rates,yield_curve,yield,absolute,USD,1
-ustreasury,UST_3Y,3 Yr,U.S. Treasury par yield 3-year,rates,yield_curve,yield,absolute,USD,1
-ustreasury,UST_5Y,5 Yr,U.S. Treasury par yield 5-year,rates,yield_curve,yield,absolute,USD,1
-ustreasury,UST_7Y,7 Yr,U.S. Treasury par yield 7-year,rates,yield_curve,yield,absolute,USD,1
-ustreasury,UST_10Y,10 Yr,U.S. Treasury par yield 10-year,rates,yield_curve,yield,absolute,USD,1
-ustreasury,UST_20Y,20 Yr,U.S. Treasury par yield 20-year,rates,yield_curve,yield,absolute,USD,1
-ustreasury,UST_30Y,30 Yr,U.S. Treasury par yield 30-year,rates,yield_curve,yield,absolute,USD,1
+fred,UST_1M,DGS1MO,U.S. Treasury constant-maturity yield (H.15 via FRED) 1-month,rates,yield_curve,yield,absolute,USD,1
+fred,UST_3M,DGS3MO,U.S. Treasury constant-maturity yield (H.15 via FRED) 3-month,rates,yield_curve,yield,absolute,USD,1
+fred,UST_6M,DGS6MO,U.S. Treasury constant-maturity yield (H.15 via FRED) 6-month,rates,yield_curve,yield,absolute,USD,1
+fred,UST_1Y,DGS1,U.S. Treasury constant-maturity yield (H.15 via FRED) 1-year,rates,yield_curve,yield,absolute,USD,1
+fred,UST_2Y,DGS2,U.S. Treasury constant-maturity yield (H.15 via FRED) 2-year,rates,yield_curve,yield,absolute,USD,1
+fred,UST_3Y,DGS3,U.S. Treasury constant-maturity yield (H.15 via FRED) 3-year,rates,yield_curve,yield,absolute,USD,1
+fred,UST_5Y,DGS5,U.S. Treasury constant-maturity yield (H.15 via FRED) 5-year,rates,yield_curve,yield,absolute,USD,1
+fred,UST_7Y,DGS7,U.S. Treasury constant-maturity yield (H.15 via FRED) 7-year,rates,yield_curve,yield,absolute,USD,1
+fred,UST_10Y,DGS10,U.S. Treasury constant-maturity yield (H.15 via FRED) 10-year,rates,yield_curve,yield,absolute,USD,1
+fred,UST_20Y,DGS20,U.S. Treasury constant-maturity yield (H.15 via FRED) 20-year,rates,yield_curve,yield,absolute,USD,1
+fred,UST_30Y,DGS30,U.S. Treasury constant-maturity yield (H.15 via FRED) 30-year,rates,yield_curve,yield,absolute,USD,1
 ecb,EURUSD,USD,ECB euro reference rate USD per EUR,fx,fx_spot,price,log,USD,1
 ecb,EURJPY,JPY,ECB euro reference rate JPY per EUR,fx,fx_spot,price,log,JPY,1
 ecb,EURGBP,GBP,ECB euro reference rate GBP per EUR,fx,fx_spot,price,log,GBP,1
