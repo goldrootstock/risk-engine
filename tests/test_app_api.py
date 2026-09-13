@@ -1,0 +1,181 @@
+"""Read-only API and dashboard over a throwaway schema seeded by hand (design note 08 §5)."""
+
+from __future__ import annotations
+
+import os
+from datetime import date
+from typing import Any
+
+import psycopg
+import pytest
+from psycopg.types.json import Jsonb
+
+from risk_engine.app import queries
+from risk_engine.app.api import app, connect_read_only, get_conn
+from risk_engine.data.migrate import upgrade
+
+from .conftest import MIGRATIONS_DIR, REPO_ROOT
+
+fastapi_testclient = pytest.importorskip("fastapi.testclient")
+
+pytestmark = pytest.mark.db
+
+
+def _seed(conn: psycopg.Connection[Any]) -> None:
+    """Two fhs runs, one backtest batch (twice, to test 'latest'), one stress run."""
+    ids = []
+    for as_of, var, es in ((date(2024, 1, 10), 800.0, 900.0), (date(2024, 1, 11), 820.0, 950.0)):
+        got = conn.execute(
+            """INSERT INTO risk_runs (portfolio_code, as_of_date, positions_as_of, method,
+                   window_days, n_scenarios, portfolio_value, params, tag, universe)
+               VALUES ('T', %s, '2024-01-01', 'fhs', 500, 500, 100000.0, %s, 'daily_batch', 'u')
+               RETURNING run_id""",
+            (as_of, Jsonb({"risk_params_sha256": "a" * 64})),
+        ).fetchone()
+        assert got is not None
+        ids.append(int(got[0]))
+        conn.execute(
+            """INSERT INTO risk_measures (run_id, measure, confidence, scope_type, scope_key, value)
+               VALUES (%(r)s, 'var', 0.99, 'portfolio', '', %(v)s),
+                      (%(r)s, 'es', 0.975, 'portfolio', '', %(e)s),
+                      (%(r)s, 'stressed_es', 0.975, 'portfolio', '', 1500.0),
+                      (%(r)s, 'component_es', 0.975, 'instrument', 'WTI', %(c1)s),
+                      (%(r)s, 'component_es', 0.975, 'instrument', 'EURUSD', %(c2)s)""",
+            {"r": ids[-1], "v": var, "e": es, "c1": es * 0.7, "c2": es * 0.3},
+        )
+    conn.execute(
+        """INSERT INTO backtest_results (run_id, universe, portfolio_code, as_of_date, pnl_date,
+               hpl, rtpl, var_99, es_975, exception, attribution, h_business_days, var_h_block,
+               var_h_sqrt, exception_raw, exception_sqrt)
+           VALUES (%s, 'u', 'T', '2024-01-10', '2024-01-11', -500.0, -480.0, 800.0, 900.0, false,
+                   '{}', 1, NULL, NULL, false, false),
+                  (%s, 'u', 'T', '2024-01-11', '2024-01-15', -900.0, -850.0, 820.0, 950.0, false,
+                   %s, 2, 1200.0, 1159.7, true, false)""",
+        (ids[0], ids[1], Jsonb({"WTI": 700.0, "_total": 900.0})),
+    )
+    for batch in ("raw", "block"):
+        conn.execute(
+            """INSERT INTO backtest_summaries (universe, portfolio_code, window_start, window_end,
+                   n_obs, exceptions, expected, kupiec_p, christoffersen_p, cc_p, traffic_light,
+                   pla_spearman, pla_ks, pla_zone, params, exceptions_raw, exceptions_sqrt,
+                   created_at)
+               VALUES ('u', 'T', '2024-01-10', '2024-01-11', 2, 0, 0.02, 0.9, 1.0, 0.95, 'green',
+                       0.99, 0.01, 'green', %s, 1, 0, now() + (%s || ' second')::interval)""",
+            (Jsonb({"horizon_method": batch, "confidence": 0.99}), 1 if batch == "block" else 0),
+        )
+    got = conn.execute(
+        """INSERT INTO stress_runs (portfolio_code, universe, as_of_date, positions_as_of,
+               portfolio_value, es_975, scenario_set_sha256, params)
+           VALUES ('T', 'u', '2024-01-11', '2024-01-01', 100000.0, 950.0, 'b', '{}')
+           RETURNING stress_run_id"""
+    ).fetchone()
+    assert got is not None
+    conn.execute(
+        """INSERT INTO stress_results (stress_run_id, scenario, kind, loss, loss_over_es,
+               attribution)
+           VALUES (%(s)s, 'gfc_2008', 'historical', 4750.0, 5.0, '{}'),
+                  (%(s)s, 'independent', 'correlation', 1900.0, 2.0, '{}')""",
+        {"s": int(got[0])},
+    )
+
+
+@pytest.fixture
+def seeded(db_conn: psycopg.Connection[Any]) -> psycopg.Connection[Any]:
+    upgrade(db_conn, MIGRATIONS_DIR)
+    _seed(db_conn)
+    return db_conn
+
+
+@pytest.fixture
+def client(seeded: psycopg.Connection[Any]) -> Any:
+    app.dependency_overrides[get_conn] = lambda: seeded
+    try:
+        yield fastapi_testclient.TestClient(app)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_only_get_routes() -> None:
+    methods = {m for r in app.routes for m in (getattr(r, "methods", None) or set())}
+    assert methods <= {"GET", "HEAD"}, methods
+
+
+def test_connection_is_read_only(seeded: psycopg.Connection[Any]) -> None:
+    schema = seeded.execute("SHOW search_path").fetchone()
+    assert schema is not None
+    url = os.environ["DATABASE_URL"]
+    with connect_read_only(url) as ro:
+        ro.execute(f"SET search_path TO {schema[0]}")
+        assert ro.execute("SELECT count(*) FROM risk_runs").fetchone() == (2,)
+        with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
+            ro.execute("DELETE FROM risk_runs")
+
+
+def test_headline_endpoints(client: Any) -> None:
+    assert client.get("/health").json() == {"status": "ok", "db": True}
+    es = client.get("/es", params={"universe": "u", "portfolio": "T"}).json()
+    assert es["value"] == 950.0 and es["as_of"] == "2024-01-11" and es["confidence"] == 0.975
+    assert es["fraction_of_portfolio_value"] == pytest.approx(0.0095)
+    assert es["risk_params_sha256"] == "a" * 64
+    var = client.get("/var", params={"universe": "u", "portfolio": "T", "as_of": "2024-01-10"})
+    assert var.json()["value"] == 800.0 and var.json()["run_id"] < es["run_id"]
+    assert client.get("/es", params={"universe": "nope"}).status_code == 404
+    run = client.get("/runs/latest", params={"universe": "u", "portfolio": "T"}).json()
+    assert run["component_es"] == {"WTI": 665.0, "EURUSD": 285.0}
+    assert sum(run["component_es"].values()) == pytest.approx(950.0)
+    cat = client.get("/catalog").json()
+    assert cat == [
+        {
+            "universe": "u",
+            "portfolio": "T",
+            "tag": "daily_batch",
+            "method": "fhs",
+            "n_runs": 2,
+            "first": "2024-01-10",
+            "last": "2024-01-11",
+        }
+    ]
+
+
+def test_series_backtest_stress(client: Any) -> None:
+    s = client.get("/series", params={"universe": "u", "portfolio": "T"}).json()
+    assert [x["var_99"] for x in s] == [800.0, 820.0] and s[0]["stressed_es"] == 1500.0
+    bt = client.get("/backtest", params={"universe": "u", "portfolio": "T"}).json()
+    assert bt["horizon_method"] == "block"  # newest batch, not the earlier raw one
+    assert len(bt["windows"]) == 1 and bt["windows"][0]["exceptions_raw"] == 1
+    t = bt["totals"]
+    assert (t["days"], t["exceptions"], t["exceptions_raw"], t["exceptions_sqrt"]) == (2, 0, 1, 0)
+    assert (t["multi_day_transitions"], t["multi_day_exceptions_raw"]) == (1, 1)
+    assert t["expected"] == pytest.approx(0.02)
+    days = client.get(
+        "/backtest/days", params={"universe": "u", "portfolio": "T", "exceptions_only": "true"}
+    ).json()
+    assert len(days) == 1 and days[0]["h"] == 2 and days[0]["var_h_block"] == 1200.0
+    assert days[0]["attribution"] == {"WTI": 700.0, "_total": 900.0}
+    st = client.get("/stress", params={"universe": "u", "portfolio": "T"}).json()
+    assert [r["scenario"] for r in st["results"]] == ["independent", "gfc_2008"]
+    assert st["results"][1]["loss_over_es"] == 5.0
+    assert client.get("/stress", params={"universe": "u", "portfolio": "X"}).status_code == 404
+
+
+def test_queries_without_rows(seeded: psycopg.Connection[Any]) -> None:
+    assert queries.latest_run(seeded, "u", "T", method="mc") is None
+    assert queries.backtest_latest(seeded, "u", "X") is None
+    assert queries.headline_series(seeded, "u", "T", start=date(2030, 1, 1)) == []
+
+
+def test_dashboard_smoke(seeded: psycopg.Connection[Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    apptest = pytest.importorskip("streamlit.testing.v1")
+    schema = seeded.execute("SHOW search_path").fetchone()
+    assert schema is not None
+    # point the dashboard's own connections at the throwaway schema via the URL
+    url = os.environ["DATABASE_URL"]
+    sep = "&" if "?" in url else "?"
+    monkeypatch.setenv("DATABASE_URL", f"{url}{sep}options=-c%20search_path%3D{schema[0]}")
+    at = apptest.AppTest.from_file(
+        str(REPO_ROOT / "src" / "risk_engine" / "app" / "dashboard.py"), default_timeout=60
+    )
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("950" in m.value for m in at.metric)
+    assert any("Backtest" in h.value for h in at.subheader)

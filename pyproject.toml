@@ -32,6 +32,12 @@ dev = [
   "mypy==2.3.1",    # pinned: bump deliberately, never by accident of a fresh install
   "pandas-stubs>=2.2",
 ]
+app = [                # read-only serving layer (design note 08); CI installs it for the tests
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "streamlit>=1.50",   # width="stretch" API
+  "altair>=5",
+]
 
 [project.urls]
 Repository = "https://github.com/goldrootstock/risk-engine"
@@ -106,3 +112,7 @@ strict_equality = true
 [[tool.mypy.overrides]]
 module = ["scipy.*"]
 ignore_missing_imports = true   # scipy ships no stubs; scipy-stubs is a third-party package we do not pin
+
+[[tool.mypy.overrides]]
+module = ["altair.*"]
+ignore_missing_imports = true   # altair's typed API is partial (mypy sees Any for most encodings)

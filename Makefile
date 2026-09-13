@@ -5,7 +5,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 # Nothing here modifies files; `make fmt` is the only write-mode target and is explicit.
 
-.PHONY: check lint typecheck test fmt db migrate
+.PHONY: check lint typecheck test fmt db migrate api dashboard
 
 PY ?= .venv/bin
 
@@ -29,3 +29,9 @@ db:             ## start local PostgreSQL
 
 migrate:
 	$(PY)/python -m risk_engine.data.migrate
+
+api:            ## read-only FastAPI on :8000 (design note 08)
+	$(PY)/uvicorn risk_engine.app.api:app --port 8000
+
+dashboard:      ## read-only Streamlit dashboard on :8501
+	$(PY)/streamlit run src/risk_engine/app/dashboard.py
