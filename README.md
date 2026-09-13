@@ -1,88 +1,84 @@
 # risk-engine
 
-Portfolio Risk & CCP Margin Engine — an independent project in Python / PostgreSQL.
+A portfolio market-risk engine for a multi-asset book — U.S. Treasury yields, G10/Asia FX and
+energy spot — built in Python 3.12 on PostgreSQL 17. It loads public data (Federal Reserve
+H.15 via FRED, ECB reference rates, EIA spot prices), builds a factor change matrix, computes
+1-day **Expected Shortfall 97.5 % and VaR 99 %** by filtered historical simulation (EWMA/GARCH
+scaling, date-wise joint residual sampling) with parametric and Monte Carlo cross-checks, and
+validates the result the way a regulator would: Kupiec, Christoffersen, Basel traffic light, a
+PLA-style test, and a stress module. Every parameter is pinned by a test and every run records
+the hash of the configuration it used.
 
-> **Status: work in progress, week 1 of ~8 (started 2026-09-12).**
-> Done: project scaffold with CI, PostgreSQL schema (`instruments`, `prices`, `positions`,
-> `risk_runs`, `risk_measures`) with migration runner and tests, design notes 01–02.
-> Not yet: ETL, return matrix, FHS ES/VaR, backtests, stress, model document, dashboard,
-> margin module, API. Nothing here computes a risk number yet. The design notes under
-> `docs/design/` are the current deliverable and describe what will be built and why.
+**Start here: [`docs/model_document.md`](docs/model_document.md)** — the SR 11-7-style model
+document. It is written as an argument, not a results list: *every backtest passed — so is the
+model trustworthy?*
 
-- **Risk module**: filtered historical simulation (EWMA / GARCH volatility scaling), Expected Shortfall 97.5% (FRTB-style, stressed window) and VaR 99%, component / incremental attribution, historical and hypothetical stress scenarios.
-- **Validation**: regulatory VaR/ES backtesting (Kupiec POF, Christoffersen independence, Basel traffic light) and a PLA-style Spearman / KS test; SR 11-7-style model documentation.
-- **Margin module** (later): VaR/ES-based initial margin in the style of SPAN 2 / IRM 2 (2-day MPOR, anti-procyclicality floors, liquidity add-on, spot/futures cross-margining), legacy SPAN comparison, margin coverage backtest, Cover-2 default-fund sizing.
+## What the validation found
 
-Design notes live in [`docs/design/`](docs/design/). Project conventions, including how AI
-assistance is used, are in [`CLAUDE.md`](CLAUDE.md).
+- **6,179 daily backtests (2001–2026) on a 29-series sample.** Official exceptions 50 vs 61.8
+  expected at 99 %; all 25 Basel windows green; Christoffersen rejects one window. (Raw 1-day
+  VaR: 63 exceptions, two yellow windows — see below why raw is the wrong comparison.)
+- **The worst exception was 6.39× VaR** (2020-04-20, WTI −55.29 USD/bbl). The volatility filter
+  was exactly one day late, and no frequency test can see the size of that day.
+- **A horizon mismatch appeared only after changing the aggregation unit.** By calendar day the
+  excess after gaps is not significant (p = 0.10); by business day, transitions spanning
+  ≥ 2 business days had 15 exceptions in 340 (4.41 %, p = 2.5×10⁻⁶). Weekends were diluting
+  the signal. Fixed with an h-day block bootstrap of residuals; raw and √h are kept alongside.
+- **Breaking correlations does not diversify this book, it hurts it: independent-sample ES is
+  1.74× the joint ES**, because the WTI-long / Brent-short hedge depends on the two crudes
+  moving together. The 2020 negative-WTI day is the real-world instance.
+- **Cross-checks agree.** Parametric ≈ Monte Carlo on the linear book (0.4 %); parametric
+  ES/VaR = 1.005 (normal theory 1.005) vs FHS 1.038; the stress replay of 2020-04-20 reproduces
+  the backtest's worst loss to the dollar (10,790,530); FRED and Treasury yields matched on
+  every overlapping date.
 
-## Data
-
-Universe v1 is 31 public-domain daily series: 11 constant-maturity Treasury yields (Federal
-Reserve H.15, via FRED), 12 ECB euro reference rates (used as USD crosses) and 8 EIA energy
-spot prices. FRED and EIA need free API keys (`FRED_API_KEY`, `EIA_API_KEY` in `.env`). Equities and futures
-are planned for v2 once a licensed source is confirmed. Raw vendor files are never committed;
-the ETL reloads the full history from the original sources. See design note 02.
-
-## Requirements
-
-- Python 3.12 (see `.python-version`)
-- Docker (for the local PostgreSQL)
-
-## Setup
-
-```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-cp .env.example .env
-docker compose up -d                    # PostgreSQL 17 on localhost:5432
-python -m risk_engine.data.migrate      # apply db/migrations/*.sql
-python -m risk_engine.data.migrate status
-```
-
-Migrations are plain SQL files in `db/migrations/NNNN_name.sql`, applied in order and recorded in `schema_migrations`. Each file runs in its own transaction.
-
-## Develop
+## Reproduce
 
 ```bash
-ruff check . && ruff format .   # lint + format
-mypy                            # type check (src/)
-pytest                          # tests; `db`-marked tests need DATABASE_URL
-pytest --cov                    # with coverage
+python3.12 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
+cp .env.example .env            # add FRED_API_KEY and EIA_API_KEY (free)
+docker compose up -d && python -m risk_engine.data.migrate
+python -m risk_engine.data.etl sync                                   # 31 series, full history
+python -m risk_engine.risk load-positions config/positions_main.csv
+python -m risk_engine.risk backfill --from 1999-01-05 --to 2026-09-09 --universe from_1999 --tag daily_batch
+python -m risk_engine.backtest run --universe from_1999 --portfolio MAIN
+python -m risk_engine.risk stress --as-of 2026-09-09 --universe from_1999 --portfolio MAIN
+make check                                                            # ruff, mypy, pytest (needs the DB)
 ```
 
-### ETL
+Raw vendor data is never committed; the ETL re-downloads it from the original sources.
 
-```bash
-python -m risk_engine.data.etl sync                 # full history of every series
-python -m risk_engine.data.etl sync --incremental   # from last loaded date minus 14 days
-python -m risk_engine.data.etl sync --dry-run       # fetch, cache, validate; write nothing
-python -m risk_engine.data.etl status               # per-series coverage (read-only)
-```
+## How it was built
 
-Exit codes: `0` every series loaded · `1` configuration or infrastructure error (missing
-`DATABASE_URL`/`EIA_API_KEY`, database unreachable) · `2` the run finished but at least one
-series was skipped or failed — see the `etl_runs` table. A skipped series is never a silent
-success.
+Design and validation judgement are mine; the implementation was done in a pair with Claude
+Code under an explicit contract ([`CLAUDE.md`](CLAUDE.md) §5). Concretely:
 
-`pytest` skips tests marked `db` unless `DATABASE_URL` is set. Export it (or `set -a; source .env; set +a`) to run them locally; CI always runs them against a service container.
+- I set the design: the schema and its rationale, the sample sets, the return definitions
+  (bp for yields, absolute USD for energy because WTI went negative), the choice of block
+  bootstrap over √h for multi-day horizons, the stress windows, and the rule that checks and
+  validations are read-only and that parameters are never changed after seeing a result.
+- The assistant wrote the code, the tests and the first drafts of the design notes; I reviewed
+  and amended each note before the corresponding code went in (early modules were written
+  signatures-and-tests first, bodies by me; the commit history shows where that boundary
+  moved on 2026-09-13).
+- The questions that produced the findings above — *is 19/63 after gaps normal? define gap;
+  give me the baseline* — were mine; the measurement and the honest write-up were the
+  assistant's job. The design notes in `docs/design/` keep that dialogue.
 
-## Conventions
+## Limits
 
-**Sign of losses.** VaR, ES, margin and realised losses are stored and reported as **positive numbers** in the base currency (USD). The sign is flipped in exactly two places: once when scenario P&L is turned into a loss distribution (`loss = -pnl`), and once when a VaR/ES band is overlaid on a P&L chart. Everywhere else, including the database and API responses, a larger number means a larger loss. Rationale and the full table are in `docs/design/01-data-layer-schema.md` §1-1.
-
-**Numeric types.** Measured values (prices, risk numbers) are `DOUBLE PRECISION` and arrive in Python as `float`; ledger values (quantities, multipliers) are `NUMERIC` and arrive as `Decimal`.
+Frequency tests pass, but the tail *size* is outside them (6.39×), the multi-day horizon needed
+a correction that leaves the model conservative (0.81 % exceptions, four zero-exception windows
+reject Kupiec on the low side), the PLA test has no power on a linear book, DGS30 for
+2002–2006 is an H.15 estimate rather than an observation, and the portfolio is an arbitrary
+book in which energy carries 82 % of ES. Full discussion: model document §7.
 
 ## Layout
 
 ```
-db/migrations/  plain-SQL schema migrations
-src/risk_engine/
-  settings.py DATABASE_URL / MIGRATIONS_DIR from env or .env
-  data/       migration runner, ETL
-  risk/       return matrix, FHS, ES / VaR
-  backtest/   Kupiec, Christoffersen, traffic light, PLA
-tests/
-docs/design/  numbered design notes (approved before code)
+config/          universe, sample sets, risk / backtest / stress parameters (all pinned by tests)
+db/migrations/   plain-SQL schema, one transaction each
+src/risk_engine/ data (ETL), risk (returns, FHS, parametric, MC, stress), backtest
+docs/design/     numbered design notes — proposals, counter-proposals, decisions
+docs/            decisions.md (every parameter with its source), walkthrough.md, model_document.md
 ```
