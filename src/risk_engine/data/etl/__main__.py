@@ -251,8 +251,14 @@ def _sync_source(
             )
             continue
         try:
-            result = upsert_prices(conn, spec, series)
+            # Success path: prices and the audit row commit together (one transaction; the
+            # upsert's own transaction() becomes a savepoint inside it).
+            with conn.transaction():
+                result = upsert_prices(conn, spec, series)
+                record(sid, spec, "loaded", report, result, sha)
         except Exception as exc:
+            # Failure path: the block above rolled back (no prices, no audit row), so the
+            # failure record is written in its own transaction and survives.
             problems += 1
             failed = Report(
                 report.source,
@@ -268,7 +274,6 @@ def _sync_source(
             record(sid, spec, "failed", failed, None, sha)
             log.error("%s/%s load failed: %s", source.name, sid, exc)
             continue
-        record(sid, spec, "loaded", report, result, sha)
         log.info(
             "%s/%s %s..%s rows=%d inserted=%d updated=%d unchanged=%d findings=%d elapsed=%.1fs",
             source.name,

@@ -25,7 +25,9 @@ from risk_engine.data.etl.http import client_for, fetch_with_retry
 BASE_URL = "https://api.stlouisfed.org"
 OBSERVATIONS_PATH = "/fred/series/observations"
 #: Maximum observations per request [출처: FRED API docs, ``limit`` 1..100000]; the longest
-#: daily series here (DGS3MO from 1981) has ~11,500 rows, so one request per series.
+#: daily series here (DGS1 from 1962) has ~16,200 rows, so one request per series. ``fetch``
+#: compares ``count`` with the rows received and raises on any shortfall: a series that ever
+#: outgrows one page fails loudly instead of being silently truncated.
 LIMIT = 100000
 #: FRED writes a missing observation as a lone period.
 MISSING = "."
@@ -72,9 +74,11 @@ class FredSource:
                 payload = response.json()
                 if "observations" not in payload:
                     raise ValueError(f"FRED response for {series} has no observations")
-                if int(payload.get("count", 0)) > LIMIT:
+                received, total = len(payload["observations"]), int(payload.get("count", -1))
+                if total != received:
                     raise ValueError(
-                        f"FRED series {series} exceeds one page ({payload['count']} rows)"
+                        f"FRED series {series}: response holds {received} of {total} observations "
+                        "(single-request limit exceeded or partial response)"
                     )
                 files.append(RawFile(self.name, series, url, response.content, fetched_at))
         return files

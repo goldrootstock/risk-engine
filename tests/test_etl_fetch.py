@@ -138,3 +138,13 @@ def test_fred_fetch_rejects_payload_without_observations() -> None:
 
     with pytest.raises(ValueError):
         FredSource(api_key="k", client=_client(handler)).fetch(["DGS10"], None, None)
+
+
+def test_fred_fetch_rejects_truncated_response() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"count": 3, "observations": [{"date": "2020-04-20", "value": "0.63"}]}
+        )
+
+    with pytest.raises(ValueError, match="1 of 3"):
+        FredSource(api_key="k", client=_client(handler)).fetch(["DGS10"], None, None)
