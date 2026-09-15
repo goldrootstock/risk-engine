@@ -1,4 +1,4 @@
-"""Command line: ``python -m risk_engine.margin run|backfill|load-members``.
+"""Command line: ``python -m risk_engine.margin run|backfill|load-members|coverage``.
 
 Mirrors ``python -m risk_engine.risk``: one run, or every aligned date in a range (the
 official ``margin_batch`` series for the coverage backtest). Every command propagates
@@ -13,10 +13,11 @@ import sys
 import time
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import psycopg
 
-from risk_engine.margin import engine
+from risk_engine.margin import coverage, engine
 from risk_engine.margin.params import MarginParams
 from risk_engine.risk import engine as risk_engine
 from risk_engine.risk import record
@@ -48,6 +49,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     lm = sub.add_parser("load-members", help="upsert the clearing members' positions CSV")
     lm.add_argument("path", type=Path, nargs="?", default=Path("config/positions_members.csv"))
+
+    cv = sub.add_parser("coverage", help="coverage backtest of the recorded margin series")
+    cv.add_argument("--portfolio", default="MAIN")
+    cv.add_argument("--universe", default="from_1999")
+    cv.add_argument("--tag", default=engine.OFFICIAL_TAG)
     return parser
 
 
@@ -80,6 +86,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"member position rows written: {n}")
             return 0
         rp, mp = risk_engine.RiskParams.load(), MarginParams.load()
+        if args.command == "coverage":
+            return run_coverage(conn, args, rp, mp, version)
         if args.command == "run":
             res = engine.run(
                 conn,
@@ -129,6 +137,40 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"backfill complete: {done} margin runs {args.portfolio} {args.start}..{args.end} "
             f"in {time.perf_counter() - t0:.0f}s"
+        )
+    return 0
+
+
+def run_coverage(
+    conn: psycopg.Connection[Any],
+    args: argparse.Namespace,
+    rp: risk_engine.RiskParams,
+    mp: MarginParams,
+    version: str | None,
+) -> int:
+    """Read the margin series, test coverage, record the report."""
+    cfg = coverage.CoverageConfig.from_params(mp)
+    runs, pnls, im_h = coverage.load_inputs(
+        conn, args.universe, args.portfolio, cfg=cfg, tag=args.tag, risk_params=rp, margin_params=mp
+    )
+    if not runs:
+        print("coverage: no margin runs for that series", file=sys.stderr)
+        return 1
+    rep = coverage.backtest(
+        runs, pnls, cfg, universe=args.universe, portfolio_code=args.portfolio, im_h=im_h
+    )
+    n = coverage.record(conn, rep, version)
+    days = rep.days
+    print(
+        f"coverage: {len(days)} days, breaches {sum(d.breach for d in days)} "
+        f"(raw {sum(d.breach_raw for d in days)}, core {sum(d.breach_core for d in days)}, "
+        f"span {sum(bool(d.breach_span) for d in days)}), {n} windows recorded"
+    )
+    for w in rep.windows:
+        print(
+            f"  {w.window_start}..{w.window_end} n={w.n_obs} breaches={w.breaches} "
+            f"coverage={w.coverage:.4f} kupiec_p={w.kupiec.p_value:.3f} "
+            f"max_shortfall={w.max_shortfall:,.0f}"
         )
     return 0
 
