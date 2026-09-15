@@ -1,6 +1,6 @@
 # 설계 노트 01 — 데이터층 스키마 (instruments · prices · positions · risk_runs)
 
-- 상태: 결정 1~5 **전부 승인**(2026-09-12). `0001_init.sql`(instruments·prices·positions) · `0002_risk_runs.sql`(risk_measure_types·risk_runs·risk_measures·v_risk_headline) 코드화 완료. 단위·인덱스·어휘 강제는 §8-4~8-6
+- 상태: 결정 1~5 **전부 승인**(2026-09-12). `0001_init.sql`(instruments·prices·positions) · `0002_risk_runs.sql`(risk_measure_types·risk_runs·risk_measures·v_risk_headline) 코드화 완료. 단위·인덱스·어휘 강제는 §8-4~8-6. **§10 A2(P1-Margin) 착수 전 보강 (2026-09-15, 승인 대기)**
 - 기준일: 2026-09-12 · 대상: P1-Risk 1주차 (Gap plan v2 §2 · §6)
 - 범위: 리스크 엔진이 읽고 쓰는 최소 4개 테이블. `backtest_results` 는 Kupiec/Christoffersen 코드가 생기는 2주차에 별도 노트로.
 
@@ -365,3 +365,58 @@ JK 지적: `value` 한 컬럼에 통화 금액·NAV 비율·민감도가 섞이�
 | 애플리케이션 `StrEnum` 만 | 바꾸기 가장 쉽지만 psql·노트북 등 다른 경로로 쓰는 값은 아무거나 들어간다 |
 
 **결정**: `measure` → 카탈로그 FK(단위를 같이 들어야 하므로), `scope_type`·`method` → `CHECK`(구조적이고 4개·3개로 고정), Python 은 `risk_engine.data.vocab` 의 `StrEnum` 4개가 거울. `tests/test_schema_db.py::test_measure_catalogue_matches_python_vocab` 가 두 목록의 일치를 CI 에서 검사한다 — 한쪽만 고치면 CI 가 떨어진다. 한 줄 요약: **DB 제약은 "누가 써도" 막고, 앱 Enum 은 "코드에서 오타 없이" 쓰게 한다. 둘 다 둔다.**
+
+---
+
+## 10. A2(P1-Margin) 착수 전 보강 — 마진 실행의 저장 위치·식별·미예약 테이블 (2026-09-15, 승인 대기)
+
+A2 를 시작하며 노트 00~08 을 다시 읽었을 때 문서만으로 답이 나오지 않아 추측해야 했던 항목을 여기 적는다. 다음에 이 저장소를 여는 사람이 같은 추측을 반복하지 않게 하는 것이 목적이다. 결정이 필요한 항목은 "승인 대기" 로 표시하고, 마진 설계 노트(09)가 확정 문장을 받는다.
+
+### 10-1. 기록된 것 — 마진 결과는 `risk_runs` + `risk_measures` 에 (§8-2, 0002)
+
+§8-2 의 결정("마진 모듈: 같은 헤더 + `measure='im', …` 재사용")은 0002 에 이미 코드화되어 있다. `risk_measure_types` 에 IM(Initial Margin, 초기마진) 관련 7 행이 있고, `risk_engine.data.vocab.Measure` 가 거울이며, `tests/test_schema_db.py::test_measure_catalogue_matches_python_vocab` 가 일치를 검사한다.
+
+| measure | 0002 의 description (구속력 있음) |
+|---|---|
+| `im` | Initial margin, total (core + add-ons after floors) |
+| `im_core` | FHS ES-based core margin before floors and add-ons |
+| `im_floor` | **Amount added by** the anti-procyclicality floor |
+| `im_stress_blend` | **Amount added by** the stressed-period blend |
+| `im_liquidity_addon` | Liquidity add-on |
+| `im_concentration_addon` | Concentration add-on |
+| `im_span_legacy` | Legacy SPAN 16-scenario margin for comparison |
+
+읽을 때 주의: 이 description 은 DDL 에만 있고 어느 노트 본문에도 없다. 그런데 이 문구가 **분해 구조를 이미 정해 놓았다** — `im_floor`·`im_stress_blend` 는 수준(level)이 아니라 **더해진 금액(increment)** 이고, 따라서 `im = im_core + im_floor + im_stress_blend + im_liquidity_addon + im_concentration_addon` 이 성립해야 한다(component ES 의 합 = ES 와 같은 형태의 테스트 대상). APC(Anti-Procyclicality, 반경기순응성) 장치를 플로어와 스트레스 블렌드 **둘 다** 두는 구조도 여기서 정해진 셈이다. 마진 노트가 다른 분해(예: EMIR RTS 153/2013 Art. 28 의 세 대안 — 25 % 버퍼 · 스트레스 관측 25 % 가중 · 10년 룩백 플로어 — 중 하나만)를 고르면 카탈로그 행의 description 을 바꾸는 마이그레이션이 필요하다. 값이 아니라 뜻이 바뀌므로 노트 없이 하지 않는다.
+
+### 10-2. 기록되지 않은 것 1 — 마진 실행을 리스크 실행과 어떻게 구분하나 (승인 대기)
+
+`risk_runs` 를 공유하면 같은 (universe, portfolio, as_of) 에 1일 리스크 실행과 2일 MPOR(Margin Period of Risk, 마진 리스크 기간) 마진 실행이 나란히 쌓인다. A1 의 독자 세 곳은 `universe`·`portfolio_code`·`tag`·`method` 로만 거르고 **`horizon_days` 를 보지 않는다**:
+
+| 독자 | 현재 필터 | 마진 실행이 같은 tag·method 로 들어오면 |
+|---|---|---|
+| `backtest.runner.RUNS_SQL` | universe, portfolio, `tag='daily_batch'`, `method='fhs'` | 날짜당 실행 2건 → `backtest()` 가 둘 다 `DayResult` 로 만들어 창 통계가 2배로 센다. `backtest_results` 는 run_id 키라 행도 2배 |
+| `app.queries.LATEST_RUN_SQL` (`/es`, `/var`, `/runs/latest`) | universe, portfolio, method, tag(기본 None = 전부) | run_id 가 큰 쪽 = 나중에 돌린 마진 실행이 이겨 `/es` 가 2일 ES 를 돌려준다 |
+| `app.queries.headline_series` | universe, portfolio, tag, method | 같은 날짜에 두 점 |
+
+| | 방법 | 대가 |
+|---|---|---|
+| **(a) 권고** | `tag='margin_batch'`(정식) / `'margin_adhoc'`, `method='fhs'`, `horizon_days=2`. 마진 독자는 `tag LIKE 'margin_%' AND horizon_days = 2`, A1 독자 세 곳은 지금 필터에 `horizon_days = 1` 을 **추가**한다(방어) | A1 쿼리 세 곳 한 줄씩. DDL 없음. `risk_runs.tag` 의 COMMENT("daily_batch = official series used by backtests")를 "… for the 1-day risk backtest; margin_batch = official series for the margin coverage backtest" 로 갱신(0009 에 한 줄) |
+| (b) | `method='margin'` 추가 | `method` 는 "분포를 어떻게 만들었나"(fhs / parametric / mc)의 어휘라 뜻이 어긋난다. CHECK 교체 마이그레이션 + `Method` StrEnum 변경 |
+| (c) | `margin_runs` 별도 테이블 | §8-2 결정 번복. 헤더 컬럼 전부 복제 |
+
+(a) 를 채택하면 `horizon_days` 가 실제 코드의 WHERE 절에 두 번 이상 나타난다 — §9-2 승격 규칙의 조건이지만 이미 컬럼이므로 추가 조치 없음.
+
+### 10-3. 기록되지 않은 것 2 — 예약되지 않은 테이블 (0009, 마진 노트에서 DDL 승인)
+
+§4 의 "의도적으로 뺀 것" 표는 백테스트(0006 완료)·스트레스(0007 완료) 테이블을 예약했지만, 마진의 두 검증 산출물은 예약하지 않았다. 둘 다 `risk_measures` 로는 담을 수 없는 모양이다.
+
+| 산출물 | 모양 | 왜 `risk_measures` 가 아닌가 |
+|---|---|---|
+| 커버리지 백테스트 | 날짜 t 한 행: 실현 2일 손실, 그날의 IM, breach 여부, 부족분 (loss − IM)⁺, 귀속. 창별 요약: 커버리지 비율, breach 수, Kupiec at 1 %, 최대 부족분, params sha256 | `backtest_results` / `backtest_summaries` 와 같은 형태. 실현 손실은 실행 결과가 아니라 **사후 관측**이라 run 의 measure 가 아니다(노트 06 §3 과 같은 이유) |
+| Cover-2 디폴트 펀드 | 날짜 × 시나리오 × 청산회원: 스트레스 손실, IM, 초과분 (loss − IM)⁺. 회원별 최대 초과분 상위 2 의 합 = Cover-2 | `scope_type` 에 회원 축이 없고(portfolio / asset_class / instrument / factor) 시나리오 축도 없다. `stress_results` 는 포트폴리오 하나의 실행이다 |
+
+예정: `db/migrations/0009_margin.sql` — `margin_coverage_results` · `margin_coverage_summaries` · `default_fund_runs` · `default_fund_results`. 기존 테이블·제약은 건드리지 않는다. DDL 은 마진 노트(09)의 저장 절에서 승인받는다(CLAUDE.md §5: 스키마 변경은 멈춘다).
+
+### 10-4. 기록되지 않은 것 3 — 청산회원(clearing member)은 무엇인가 (승인 대기)
+
+Cover-2 는 회원이 셋 이상이어야 뜻이 있다. 현재 장부는 `MAIN` 하나이고 회원 개념이 없다. 권고: **회원 = `portfolio_code`**. 합성 회원 장부 N 개(예: `CM_A` … `CM_D`, MAIN 포함)를 `config/positions_members.csv` 로 두고 `positions_main.csv` 처럼 값 고정 테스트로 박는다. §2-3 의 "`portfolios` 테이블은 메타가 둘 이상 생기면" 규칙에 대해: 회원 메타(디폴트 펀드 분담금)는 **입력이 아니라 산출**(Cover-2 결과에서 배분)이므로 지금도 메타는 기준통화 하나뿐 — 테이블은 여전히 만들지 않는다. 회원 장부의 구성은 임의값이며 `decisions.md` 에 그렇게 적는다.

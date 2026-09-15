@@ -39,7 +39,7 @@ CI #1(2026-09-12): 로컬 검사 루틴이 `ruff format .`(쓰기 모드)를 포
 |---|---|---|
 | 5 | 백테스트 함수는 파라미터를 **불변 인자로만** 받고, 내부에 추정·최적화 루프가 없다. λ·창·신뢰수준은 `frozen=True` dataclass 로 들어오고 함수 안에서 재할당이 불가능하다. 파라미터의 해시가 `backtest_results` 에 기록되어 "어느 설정으로 검정했나"가 결과와 분리될 수 없다. 대안 파라미터는 **새 실행**(`tag='experiment'`)이지 기존 실행의 재검정이 아니다 | `backtest(runs: Sequence[RunRecord], realised: PnLSeries, cfg: BacktestConfig) -> BacktestReport` — DB 를 쓰는 함수는 별도 `record(report) -> int` 하나 |
 | 7 | 시나리오 충격은 **버전 관리되는 설정 파일**(`config/stress_scenarios.toml`)에서만 온다. 코드는 파일을 읽어 `frozen` 객체로 만들고 파일의 sha256 을 `risk_runs.params.scenario_set` 에 기록한다. 충격을 인자로 받는 함수는 있어도 충격을 **계산해서 만드는** 함수는 없다(역사적 재현은 날짜 구간을 지정할 뿐 크기를 정하지 않는다) | `stress(portfolio: Positions, scenarios: ScenarioSet) -> StressReport` |
-| 8 | 플로어·버퍼·스트레스 창은 `config/margin_params.toml` 에서만 오고 sha256 이 실행에 기록된다. 커버리지 백테스트는 마진 실행 결과를 **읽기만** 하고 파라미터 객체를 받지 않는다 — 파라미터를 바꿔 다시 돌리려면 새 마진 실행을 만들어야 하고 그 실행은 다른 해시를 가진다 | `coverage_backtest(margin_runs: Sequence[MarginRun], realised: PnLSeries) -> CoverageReport` |
+| 8 | 플로어·버퍼·스트레스 창은 `config/margin_params.toml` 에서만 오고 sha256 이 실행에 기록된다. 커버리지 백테스트는 마진 실행 결과를 **읽기만** 하고 파라미터 객체를 받지 않는다 — 파라미터를 바꿔 다시 돌리려면 새 마진 실행을 만들어야 하고 그 실행은 다른 해시를 가진다 | `coverage_backtest(margin_runs: Sequence[MarginRun], realised: PnLSeries) -> CoverageReport` — A2 보강(2026-09-15): `MarginRun` 은 별도 테이블이 아니라 `risk_runs` 행이다(노트 01 §10-2), `realised` 의 정의는 노트 06 §6-3 |
 
 ### 3-1. 설정 값 고정 테스트 (pinned-config test) — 형태 확정 (2026-09-13)
 

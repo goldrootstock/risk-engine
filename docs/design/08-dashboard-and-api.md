@@ -95,3 +95,8 @@ API 와 대시보드가 **같은 함수** 를 부른다. 두 화면의 숫자가
 - 결과 재계산·파라미터 입력 UI: §1.
 - 캐시 서버·풀: 트래픽이 없다. 필요해지면 `psycopg_pool` 한 줄.
 - 마진(P1-Margin) 화면: 테이블이 아직 없다. `im_*` 측정값이 기록되면 `latest_run` 이 그대로 보여 준다.
+  **보강(2026-09-15)**: 단, `latest_run` 은 `horizon_days` 를 거르지 않으므로 마진 실행이 같은
+  universe·portfolio·method 로 들어오면 `tag=None` 기본에서 2일 MPOR 실행이 1일 리스크 실행을
+  이길 수 있다. 노트 01 §10-2 의 (a) — 마진 `tag='margin_batch'` + A1 독자 세 곳에
+  `horizon_days = 1` 추가 — 가 A2 의 첫 코드 변경이고, `/margin` 엔드포인트와 대시보드 마진
+  구역은 마진 노트(09)에서.
