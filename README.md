@@ -52,10 +52,11 @@ model trustworthy?*
   whole scenario paths — are kept in the same table, because choosing the smaller number
   has to stay visible.
 - **Legacy SPAN is inconsistent across books, not just expensive:** breaches range from 2 to
-  27 on the same methodology (13×). It over-charges hedged books (2× the FHS margin) and
-  under-charges the long-only rates book in volatility regime shifts (0.8×, 0.63× in 2022)
-  because its scan ranges are unfiltered trailing quantiles and its only diversification is
-  an ad-hoc credit table — the reason CCPs moved to VaR-based margin.
+  27 on the same methodology (13×). The part that is a property of the method — verified in
+  closed form on the credit-free rates book — is the under-charge in volatility regime
+  shifts (0.8× the FHS margin, 0.63× in 2022), because scan ranges are unfiltered trailing
+  quantiles. The over-charge on hedged books (2×) depends on the spread-credit rates this
+  repository chose, which are arbitrary, so it is reported but not claimed as a finding.
 
 ## Reproduce
 
