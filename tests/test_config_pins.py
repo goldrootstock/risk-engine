@@ -208,3 +208,44 @@ def test_stress_scenarios_are_pinned() -> None:
     }
     assert hist == EXPECTED_STRESS_HISTORICAL and hyp == EXPECTED_STRESS_HYPOTHETICAL
     assert cfg["correlation"] == {"permutations": 20, "seed": 20260913}
+
+
+EXPECTED_MARGIN_PARAMS = {
+    "core": {"confidence": 0.99, "measure": "es", "mpor_days": 2},
+    "floor": {"lookback_days": 2500},
+    "stress_blend": {"weight": 0.25, "window_days": 250},
+    "liquidity": {"rates_bp": 2.0, "fx_bp": 2.0, "commodity_bp": 5.0},
+    "concentration": {
+        "rate": 0.005,
+        "threshold_usd": {"rates": 500_000_000, "fx": 100_000_000, "commodity": 20_000_000},
+    },
+    "span": {
+        "scan_confidence": 0.99,
+        "extreme_multiple": 2.0,
+        "extreme_weight": 0.35,
+        "vol_scan_pct": 0.0,
+        "spread_credits": {
+            "WTI/BRENT": 0.80,
+            "WTI/GASOLINE_NYH": 0.60,
+            "WTI/HEATOIL_NYH": 0.60,
+            "GASOLINE_NYH/HEATOIL_NYH": 0.50,
+            "UST_2Y/UST_5Y": 0.70,
+            "UST_5Y/UST_10Y": 0.70,
+            "UST_10Y/UST_30Y": 0.60,
+            "UST_3M/UST_2Y": 0.40,
+            "EURUSD/EURGBP": 0.50,
+        },
+    },
+    "coverage": {"target": 0.99, "window_days": 250},
+    "default_fund": {"cover": 2, "allocation": "pro_rata_im"},
+}
+
+
+def test_margin_params_are_pinned() -> None:
+    """Design note 09 §9; note 00 §3-1 #8: floors and blends change only with this table."""
+    with (REPO_ROOT / "config" / "margin_params.toml").open("rb") as fh:
+        cfg = tomllib.load(fh)
+    assert cfg == EXPECTED_MARGIN_PARAMS, (
+        "config/margin_params.toml changed: update EXPECTED_MARGIN_PARAMS in the same commit "
+        "and say why in the message (design note 00 §3-1)"
+    )

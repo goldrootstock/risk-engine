@@ -1,0 +1,52 @@
+# Margin parameters (design note 09). Every value is pinned by tests/test_config_pins.py and
+# the file's sha256 is written to every margin run, coverage summary and default-fund run.
+# Regulatory anchors: CPMI-IOSCO PFMI (2012) Principle 6; EMIR RTS 153/2013 Art. 24-28, 42.
+# Values marked "settings" are not estimates (the v1 sources carry no volume, note 02 §10-3).
+
+[core]
+confidence = 0.99        # PFMI P6 KC3 / EMIR RTS Art. 24: >= 99 % single-tailed (non-OTC)
+measure = "es"           # "es" | "var": core = that measure at `confidence` over the MPOR
+mpor_days = 2            # EMIR RTS Art. 26: >= 2 business days for non-OTC; h-day block bootstrap
+
+[floor]
+lookback_days = 2500     # EMIR RTS Art. 28(1)(c): volatility from a 10-year lookback as the floor
+
+[stress_blend]
+weight = 0.25            # EMIR RTS Art. 28(1)(b): >= 25 % weight on stressed observations
+window_days = 250        # worst 12-month window for this book at the MPOR (as note 05 §2-5)
+
+[liquidity]              # bp of gross notional per instrument, by asset class (settings)
+rates_bp = 2.0
+fx_bp = 2.0
+commodity_bp = 5.0
+
+[concentration]          # charge on gross notional above the threshold (settings)
+rate = 0.005
+[concentration.threshold_usd]
+rates = 500000000
+fx = 100000000
+commodity = 20000000
+
+[span]                   # legacy SPAN 16-scenario comparison (note 09 §5)
+scan_confidence = 0.99   # PSR = empirical 99 % quantile of |h-day change| over the residual pool
+extreme_multiple = 2.0   # scenarios 15/16: price +/- multiple x PSR ...
+extreme_weight = 0.35    # ... counted at this fraction of the loss
+vol_scan_pct = 0.0       # linear book: volatility scenarios do not move P&L; kept for shape
+[span.spread_credits]    # inter-commodity spread credit rate on the smaller leg, opposite signs
+"WTI/BRENT" = 0.80
+"WTI/GASOLINE_NYH" = 0.60
+"WTI/HEATOIL_NYH" = 0.60
+"GASOLINE_NYH/HEATOIL_NYH" = 0.50
+"UST_2Y/UST_5Y" = 0.70
+"UST_5Y/UST_10Y" = 0.70
+"UST_10Y/UST_30Y" = 0.60
+"UST_3M/UST_2Y" = 0.40
+"EURUSD/EURGBP" = 0.50
+
+[coverage]
+target = 0.99            # CPMI-IOSCO 99 % coverage
+window_days = 250
+
+[default_fund]
+cover = 2                # PFMI P4 KC4 / EMIR Art. 42(3): the two largest exposures
+allocation = "pro_rata_im"
