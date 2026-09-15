@@ -53,7 +53,7 @@ SELECT r.run_id, r.as_of_date, r.portfolio_value,
        max(m.value) FILTER (WHERE m.measure = 'stressed_es')                  AS stressed_es
 FROM risk_runs r JOIN risk_measures m USING (run_id)
 WHERE r.universe = %(universe)s AND r.portfolio_code = %(portfolio)s AND r.tag = %(tag)s
-  AND r.method = %(method)s AND m.scope_type = 'portfolio'
+  AND r.method = %(method)s AND r.horizon_days = %(horizon_days)s AND m.scope_type = 'portfolio'
   AND (%(start)s::date IS NULL OR r.as_of_date >= %(start)s)
   AND (%(end)s::date IS NULL OR r.as_of_date <= %(end)s)
 GROUP BY r.run_id ORDER BY r.as_of_date
@@ -64,6 +64,7 @@ SELECT run_id, as_of_date, positions_as_of, method, tag, horizon_days, window_da
        portfolio_value, base_currency, params, code_version
 FROM risk_runs
 WHERE universe = %(universe)s AND portfolio_code = %(portfolio)s AND method = %(method)s
+  AND horizon_days = %(horizon_days)s
   AND (%(tag)s::text IS NULL OR tag = %(tag)s)
   AND (%(as_of)s::date IS NULL OR as_of_date <= %(as_of)s)
 ORDER BY as_of_date DESC, run_id DESC
@@ -77,8 +78,9 @@ ORDER BY scope_type, measure, scope_key
 """
 
 CATALOG_SQL = """
-SELECT universe, portfolio_code, tag, method, count(*), min(as_of_date), max(as_of_date)
-FROM risk_runs GROUP BY 1, 2, 3, 4 ORDER BY 1, 2, 3, 4
+SELECT universe, portfolio_code, tag, method, horizon_days, count(*), min(as_of_date),
+       max(as_of_date)
+FROM risk_runs GROUP BY 1, 2, 3, 4, 5 ORDER BY 1, 2, 3, 4, 5
 """
 
 STRESS_RUN_SQL = """
@@ -110,16 +112,17 @@ def _num(v: Any) -> Any:
 
 
 def catalog(conn: psycopg.Connection[Any]) -> list[Row]:
-    """Every (universe, portfolio, tag, method) series present, with counts and date range."""
+    """Every (universe, portfolio, tag, method, horizon) series present, with counts and dates."""
     return [
         {
             "universe": r[0],
             "portfolio": r[1],
             "tag": r[2],
             "method": r[3],
-            "n_runs": int(r[4]),
-            "first": _iso(r[5]),
-            "last": _iso(r[6]),
+            "horizon_days": int(r[4]),
+            "n_runs": int(r[5]),
+            "first": _iso(r[6]),
+            "last": _iso(r[7]),
         }
         for r in conn.execute(CATALOG_SQL).fetchall()
     ]
@@ -132,10 +135,16 @@ def headline_series(
     *,
     tag: str = "daily_batch",
     method: str = "fhs",
+    horizon_days: int = 1,
     start: date | None = None,
     end: date | None = None,
 ) -> list[Row]:
-    """Portfolio VaR 99 / ES 97.5 / stressed ES per run date (losses positive)."""
+    """Portfolio VaR 99 / ES 97.5 / stressed ES per run date (losses positive).
+
+    Selects the series positively by ``(tag, method, horizon_days)``: the 2-day margin
+    series shares ``risk_runs`` (note 01 §10-2) and must never be mixed into the 1-day
+    risk series. ``tests/test_app_api.py::test_readers_ignore_margin_shaped_runs`` guards this.
+    """
     rows = conn.execute(
         SERIES_SQL,
         {
@@ -143,6 +152,7 @@ def headline_series(
             "portfolio": portfolio,
             "tag": tag,
             "method": method,
+            "horizon_days": horizon_days,
             "start": start,
             "end": end,
         },
@@ -167,12 +177,15 @@ def latest_run(
     *,
     method: str = "fhs",
     tag: str | None = None,
+    horizon_days: int = 1,
     as_of: date | None = None,
 ) -> Row | None:
     """Header, portfolio measures and instrument component ES of the newest run on/before ``as_of``.
 
     Returns ``None`` when no run matches. ``tag=None`` accepts any tag (the most recent
     ad-hoc run wins over an older batch run on the same date only by ``run_id``).
+    ``horizon_days`` is always selected positively (default 1): margin runs at the 2-day
+    MPOR live in the same table and must not be returned as risk runs (note 01 §10-2).
     """
     r = conn.execute(
         LATEST_RUN_SQL,
@@ -181,6 +194,7 @@ def latest_run(
             "portfolio": portfolio,
             "method": method,
             "tag": tag,
+            "horizon_days": horizon_days,
             "as_of": as_of,
         },
     ).fetchone()

@@ -54,6 +54,14 @@ API 와 대시보드가 **같은 함수** 를 부른다. 두 화면의 숫자가
 | `GET /backtest/days` | `backtest_days` | `exceptions_only=true` 로 초과일만 |
 | `GET /stress` | `stress_latest` | |
 
+**실행 계열의 양성 선택 (2026-09-15, JK 승인 1).** `latest_run`·`headline_series`·`backtest.runner`
+는 실행을 `(universe, portfolio, tag, method, horizon_days)` 로 **명시적으로 고른다**. `horizon_days`
+기본값은 1 이고 배제 조건(`!= 2`)이 아니라 선택 조건이라, 다음 모듈이 또 다른 지평의 실행을
+`risk_runs` 에 넣어도 1일 독자는 깨지지 않는다. `/catalog` 도 `horizon_days` 를 돌려준다.
+필터가 아니라 **테스트가 안전장치다**: `tests/test_app_api.py::test_readers_ignore_margin_shaped_runs`
+와 `tests/test_backtest_db.py` 가 마진 모양(2일, `margin_batch`)의 실행을 한 건 넣고 세 독자가
+그것을 무시함을 단언한다. 마진 계열은 `tag='margin_batch', horizon_days=2` 로 물어야 보인다.
+
 응답에 `run_id`·`params_sha256`·`code_version` 을 항상 실어 보낸다. 숫자만 나가면 어느 설정의
 숫자인지 알 수 없다(노트 00 §3 의 추적 가능성).
 

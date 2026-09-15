@@ -390,7 +390,7 @@ A2 를 시작하며 노트 00~08 을 다시 읽었을 때 문서만으로 답이
 
 읽을 때 주의: 이 description 은 DDL 에만 있고 어느 노트 본문에도 없다. 그런데 이 문구가 **분해 구조를 이미 정해 놓았다** — `im_floor`·`im_stress_blend` 는 수준(level)이 아니라 **더해진 금액(increment)** 이고, 따라서 `im = im_core + im_floor + im_stress_blend + im_liquidity_addon + im_concentration_addon` 이 성립해야 한다(component ES 의 합 = ES 와 같은 형태의 테스트 대상). APC(Anti-Procyclicality, 반경기순응성) 장치를 플로어와 스트레스 블렌드 **둘 다** 두는 구조도 여기서 정해진 셈이다. 마진 노트가 다른 분해(예: EMIR RTS 153/2013 Art. 28 의 세 대안 — 25 % 버퍼 · 스트레스 관측 25 % 가중 · 10년 룩백 플로어 — 중 하나만)를 고르면 카탈로그 행의 description 을 바꾸는 마이그레이션이 필요하다. 값이 아니라 뜻이 바뀌므로 노트 없이 하지 않는다.
 
-### 10-2. 기록되지 않은 것 1 — 마진 실행을 리스크 실행과 어떻게 구분하나 (승인 대기)
+### 10-2. 기록되지 않은 것 1 — 마진 실행을 리스크 실행과 어떻게 구분하나 (**(a) 승인, 2026-09-15** — 단 배제가 아니라 양성 선택 `horizon_days = 1 AND tag = <A1 의 tag>`, 회귀 테스트 필수. 구현: 노트 08 §3)
 
 `risk_runs` 를 공유하면 같은 (universe, portfolio, as_of) 에 1일 리스크 실행과 2일 MPOR(Margin Period of Risk, 마진 리스크 기간) 마진 실행이 나란히 쌓인다. A1 의 독자 세 곳은 `universe`·`portfolio_code`·`tag`·`method` 로만 거르고 **`horizon_days` 를 보지 않는다**:
 

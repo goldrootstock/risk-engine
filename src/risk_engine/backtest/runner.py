@@ -41,7 +41,7 @@ SELECT r.run_id, r.as_of_date, r.portfolio_code,
        max(m.value) FILTER (WHERE m.measure = 'es'  AND m.confidence = 0.975)    AS es_975
 FROM risk_runs r JOIN risk_measures m USING (run_id)
 WHERE r.universe = %(universe)s AND r.portfolio_code = %(portfolio)s AND r.tag = %(tag)s
-  AND r.method = %(method)s AND m.scope_type = 'portfolio'
+  AND r.method = %(method)s AND r.horizon_days = 1 AND m.scope_type = 'portfolio'
 GROUP BY r.run_id ORDER BY r.as_of_date
 """
 
@@ -153,6 +153,10 @@ def load_inputs(
     risk_params: RiskParams | None = None,
 ) -> tuple[list[RunRecord], list[DailyPnl], dict[date, float]]:
     """Read the run series and compute HPL/RTPL per run date. Read-only.
+
+    The series is selected positively as ``(universe, portfolio, tag, method, horizon_days
+    = 1)``: 2-day margin runs share ``risk_runs`` (note 01 §10-2) and would otherwise double
+    every backtested date. ``tests/test_backtest_db.py`` inserts one and asserts it is ignored.
 
     For multi-business-day transitions the h-day block-bootstrap VaR is computed as well and
     returned keyed by run date.

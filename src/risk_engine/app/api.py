@@ -62,7 +62,7 @@ def health(conn: Conn) -> dict[str, Any]:
 
 @app.get("/catalog")
 def catalog(conn: Conn) -> list[dict[str, Any]]:
-    """Which (universe, portfolio, tag, method) series exist."""
+    """Which (universe, portfolio, tag, method, horizon_days) series exist."""
     return queries.catalog(conn)
 
 

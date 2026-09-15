@@ -88,6 +88,20 @@ def conn(
             prepared=(sliced, specs, {**meta, "last": d.date()}),
         )
         record.write(db_conn, res, "test")
+    # a margin-shaped run (2-day MPOR, margin_batch) on an already backtested date: the
+    # 1-day readers must not see it (note 01 §10-2; JK approval 2026-09-15)
+    db_conn.execute(
+        """INSERT INTO risk_runs (portfolio_code, as_of_date, positions_as_of, method,
+               horizon_days, window_days, n_scenarios, portfolio_value, params, tag, universe)
+           SELECT 'T', as_of_date, positions_as_of, 'fhs', 2, 500, 499, portfolio_value, '{}',
+                  'margin_batch', 't'
+           FROM risk_runs WHERE universe = 't' ORDER BY as_of_date LIMIT 1"""
+    )
+    db_conn.execute(
+        """INSERT INTO risk_measures (run_id, measure, confidence, scope_type, scope_key, value)
+           SELECT run_id, 'var', 0.99, 'portfolio', '', 1.0e12 FROM risk_runs
+           WHERE tag = 'margin_batch'"""
+    )
     return db_conn
 
 
@@ -105,13 +119,14 @@ def test_backtest_round_trip(conn: psycopg.Connection[Any]) -> None:
         sha256="0" * 64,
     )
     assert conn.execute("SELECT count(*) FROM risk_runs WHERE universe = 't'").fetchone() == (
-        N_RUNS,
+        N_RUNS + 1,  # + the margin-shaped run that load_inputs must ignore
     )
     conn.execute("SET default_transaction_read_only = on")  # loading and testing must not write
     runs, pnls, hv = load_inputs(conn, "t", "T", cfg=cfg)
     report = backtest(runs, pnls, cfg, universe="t", portfolio_code="T", horizon_var=hv)
     conn.execute("SET default_transaction_read_only = off")
-    assert len(runs) == N_RUNS and len(report.days) == N_RUNS
+    assert len(runs) == N_RUNS and len(report.days) == N_RUNS  # margin run not counted
+    assert len({r.as_of for r in runs}) == N_RUNS  # and no date is doubled
     multi = [d for d in report.days if d.h >= 2]
     assert multi and all(d.var_block is not None and d.var_sqrt is not None for d in multi)
     assert all(d.var_block > d.var for d in multi)  # h-day VaR exceeds the 1-day VaR

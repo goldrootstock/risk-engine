@@ -22,7 +22,11 @@ pytestmark = pytest.mark.db
 
 
 def _seed(conn: psycopg.Connection[Any]) -> None:
-    """Two fhs runs, one backtest batch (twice, to test 'latest'), one stress run."""
+    """Two fhs runs, one backtest batch (twice, to test 'latest'), one stress run.
+
+    Plus one *margin-shaped* run (2-day MPOR, tag margin_batch, newest as_of and run_id)
+    that every 1-day reader must ignore (note 01 §10-2, JK approval 2026-09-15).
+    """
     ids = []
     for as_of, var, es in ((date(2024, 1, 10), 800.0, 900.0), (date(2024, 1, 11), 820.0, 950.0)):
         got = conn.execute(
@@ -63,6 +67,22 @@ def _seed(conn: psycopg.Connection[Any]) -> None:
                        0.99, 0.01, 'green', %s, 1, 0, now() + (%s || ' second')::interval)""",
             (Jsonb({"horizon_method": batch, "confidence": 0.99}), 1 if batch == "block" else 0),
         )
+    margin = conn.execute(
+        """INSERT INTO risk_runs (portfolio_code, as_of_date, positions_as_of, method,
+               horizon_days, window_days, n_scenarios, portfolio_value, params, tag, universe)
+           VALUES ('T', '2024-01-12', '2024-01-01', 'fhs', 2, 500, 499, 100000.0, '{}',
+                   'margin_batch', 'u')
+           RETURNING run_id"""
+    ).fetchone()
+    assert margin is not None
+    conn.execute(
+        """INSERT INTO risk_measures (run_id, measure, confidence, scope_type, scope_key, value)
+           VALUES (%(r)s, 'var', 0.99, 'portfolio', '', 9999.0),
+                  (%(r)s, 'es', 0.975, 'portfolio', '', 9999.0),
+                  (%(r)s, 'im', NULL, 'portfolio', '', 12000.0),
+                  (%(r)s, 'im_core', NULL, 'portfolio', '', 11000.0)""",
+        {"r": int(margin[0])},
+    )
     got = conn.execute(
         """INSERT INTO stress_runs (portfolio_code, universe, as_of_date, positions_as_of,
                portfolio_value, es_975, scenario_set_sha256, params)
@@ -106,7 +126,7 @@ def test_connection_is_read_only(seeded: psycopg.Connection[Any]) -> None:
     url = os.environ["DATABASE_URL"]
     with connect_read_only(url) as ro:
         ro.execute(f"SET search_path TO {schema[0]}")
-        assert ro.execute("SELECT count(*) FROM risk_runs").fetchone() == (2,)
+        assert ro.execute("SELECT count(*) FROM risk_runs").fetchone() == (3,)
         with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
             ro.execute("DELETE FROM risk_runs")
 
@@ -130,11 +150,45 @@ def test_headline_endpoints(client: Any) -> None:
             "portfolio": "T",
             "tag": "daily_batch",
             "method": "fhs",
+            "horizon_days": 1,
             "n_runs": 2,
             "first": "2024-01-10",
             "last": "2024-01-11",
-        }
+        },
+        {
+            "universe": "u",
+            "portfolio": "T",
+            "tag": "margin_batch",
+            "method": "fhs",
+            "horizon_days": 2,
+            "n_runs": 1,
+            "first": "2024-01-12",
+            "last": "2024-01-12",
+        },
     ]
+
+
+def test_readers_ignore_margin_shaped_runs(seeded: psycopg.Connection[Any], client: Any) -> None:
+    """Regression guard (JK, 2026-09-15): the newest row in risk_runs is a 2-day margin run.
+
+    latest_run with tag=None, headline_series and the API must all return the 1-day risk
+    series only. If this test fails, a reader lost its positive horizon selection.
+    """
+    newest = seeded.execute("SELECT max(run_id), max(as_of_date) FROM risk_runs").fetchone()
+    assert newest is not None and str(newest[1]) == "2024-01-12"  # the margin run is newest
+    run = queries.latest_run(seeded, "u", "T", tag=None)
+    assert run is not None and run["as_of"] == "2024-01-11" and run["horizon_days"] == 1
+    assert run["run_id"] < newest[0]
+    assert [x["as_of"] for x in queries.headline_series(seeded, "u", "T")] == [
+        "2024-01-10",
+        "2024-01-11",
+    ]
+    es = client.get("/es", params={"universe": "u", "portfolio": "T"}).json()
+    assert es["value"] == 950.0 and es["as_of"] == "2024-01-11"
+    # the margin series is reachable only by asking for it
+    m = queries.latest_run(seeded, "u", "T", tag="margin_batch", horizon_days=2)
+    assert m is not None and m["as_of"] == "2024-01-12"
+    assert {x["measure"] for x in m["measures"]} >= {"im", "im_core"}
 
 
 def test_series_backtest_stress(client: Any) -> None:
