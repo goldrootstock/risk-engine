@@ -64,6 +64,8 @@ ES 자체의 백테스트(Acerbi–Székely 2014)는 MVP 범위 밖 — 노트�
 
 2026-09-13 의 JK 결정(정식 초과 = h일 블록 부트스트랩 VaR, raw·√h 병기)은 `decisions.md` §4, 모델 문서 §7-2, 0008 마이그레이션, `runner.backtest(horizon_var=)` 에 있고, 이 노트 §1~§4 는 결정 전 상태다. 요약: t→t+1 전이가 h ≥ 2 영업일이면 `fhs.evaluate(horizon=h)` 가 잔차 풀에서 연속 h 개 벡터를 합쳐(날짜별 공동 샘플 유지, σ_T 는 지평 안에서 고정) h일 VaR 을 만들고 그것과 비교한다. 근거는 초과 건수가 아니라 내부 정합성이다 — EWMA 로 변동성 자기상관을 모형화한 모델이 √h(i.i.d.)로 지평을 늘리는 것은 모순.
 
+0008 이 더한 열(§3 의 표에 없던 것): `backtest_results.h_business_days`(전이의 영업일 수, 기본 1) · `var_h_block`(h일 블록 VaR, **h = 1 이면 NULL** 이고 `var_99` 가 그 값) · `var_h_sqrt`(`var_99 × √h`) · `exception_raw`(−hpl > `var_99`) · `exception_sqrt`(−hpl > `var_h_sqrt`); `backtest_summaries.exceptions_raw` · `exceptions_sqrt`. `exception` 의 뜻은 COMMENT 대로 "정식 = 지평 일치 VaR 대비" 다. `config/backtest_params.toml [horizon].method` 의 어휘는 **`block` · `sqrt` · `raw`** 셋뿐이고, `block` 인데 h ≥ 2 전이에 블록 VaR 이 없으면 `backtest()` 는 `ValueError` 로 멈춘다(조용히 raw 로 내려가지 않는다). 귀속(`attribution`)은 정식 초과일 **또는 raw 초과일** 에 저장된다 — 보정으로 초과가 사라진 날도 무엇이 컸는지 남기기 위해서다.
+
 ### 6-2. 같은 결정이 마진 MPOR 에 적용된다 (A2, 추론)
 
 CLAUDE.md §1 의 마진 모듈은 2일 MPOR(Margin Period of Risk, 마진 리스크 기간)이다. 위 결정은 백테스트 지평에 대해 내려졌지 MPOR 에 대해 명시되지 않았으나, 근거(EWMA 와 √h 의 모순)는 지평의 용도와 무관하므로 **MPOR 2일 = `fhs.evaluate(horizon=2)` 의 블록 부트스트랩** 으로 읽는다. √2 스케일은 교차확인으로 병기한다. 마진 노트(09)가 이를 확정 문장으로 받는다.
@@ -73,3 +75,9 @@ CLAUDE.md §1 의 마진 모듈은 2일 MPOR(Margin Period of Risk, 마진 리�
 ### 6-3. 커버리지 백테스트의 "실현 2일 손실" 은 HPL 의 정의를 그대로 따른다 (유추)
 
 CLAUDE.md §1 의 "realised 2-day losses" 는 어디에도 정의돼 있지 않다. §1 의 HPL 정의와 같은 규칙을 쓴다: t 의 포지션·수준을 고정하고 **정렬된 다음 두 관측일**(t+1, t+2)의 변화량을 종류별로 누적(log·abs·bp 모두 합)해 `pnl_matrix` 에 한 번 통과시킨 P&L 의 손실(`to_loss`). 휴일·교집합 공백으로 영업일 h > 2 인 전이는 §3 처럼 h 를 기록하고 h일 블록 IM 과 비교한다. 이 함수(`hpl.horizon_pnl` 가칭)는 `daily_pnl` 의 확장이지 대체가 아니다 — 1일 백테스트 결과는 바뀌지 않는다.
+
+### 6-4. DDL·코드에만 있던 규칙 (2026-09-15 전수 조사, 노트 01 §10-5)
+
+- `backtest_results` 의 키는 `run_id` (PRIMARY KEY) 이고 `CHECK (pnl_date > as_of_date)` 가 있다. **일별 행은 upsert** 다(같은 run_id 로 다시 쓰면 값이 갱신되고 `created_at` 이 지금으로 바뀐다). **창 요약은 append-only** 다(노트 00 §3: 재실행 = 새 행). 노트 08 §2 의 "append-only" 는 창 요약을 가리킨다.
+- 어휘가 두 개다: `traffic_light IN ('green','yellow','red')` 는 Basel(1996) 용어, `pla_zone IN ('green','amber','red')` 는 FRTB(MAR32) 용어. 같은 색을 두 단어로 쓰는 것은 각 규정의 원어를 그대로 따른 결과이며, 합치지 않는다.
+- `load_inputs` 는 **마지막 실행 하나만** t+1 없음을 허용한다. 그 밖에 정렬된 다음 관측일이 없는 실행 날짜가 하나라도 있으면 `ValueError` — 데이터 구멍이 조용히 빠지지 않게(커밋 76db322 "loud failures for dropped run dates").

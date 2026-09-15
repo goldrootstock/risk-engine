@@ -38,6 +38,12 @@ and kept as the record of *why*. The notes are part of the deliverable.
   backtest / status returns findings and never mutates data, files, the database or
   parameters; state changes live in separately named commands whose diff a human reviews.
   Rationale and the list of places this can break in P1: `docs/design/00-verification-is-read-only.md`.
+- **Binding decisions live in the note body.** A migration `COMMENT`, a `CHECK` constraint, a
+  catalogue row, a config-file comment, a docstring or a test expectation may *restate* a
+  decision, but none of them may be its only record. When one of those constrains a later
+  module (the 0002 `im_floor` description fixed the IM decomposition before any margin note
+  existed), the constraint is written into the owning design note first, then coded. The
+  2026-09-15 audit that produced this rule and its findings: `docs/design/01-data-layer-schema.md` §10-5.
 - Commits: Conventional Commits with scopes `data`, `etl`, `risk`, `backtest`, `margin`,
   `ci`, `docs`. One commit = one decision unit.
 

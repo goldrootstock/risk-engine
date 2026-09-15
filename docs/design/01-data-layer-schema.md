@@ -344,6 +344,8 @@ JK 지적: `value` 한 컬럼에 통화 금액·NAV 비율·민감도가 섞이�
 
 단위 어휘: `currency`(실행 기준통화 금액) · `currency_per_pct`(팩터 +1% 당 P&L) · `currency_per_bp`(+1bp 당 P&L). NAV 비율은 **저장하지 않는다** — 필요하면 뷰나 코드에서 나눈다.
 
+**보강(2026-09-15, 0003 에만 있던 규칙).** `v_risk_headline` 의 `*_frac` 열은 `portfolio_value = 0` 이면 오류가 아니라 **NULL** 이다(`NULLIF(portfolio_value, 0)`). 선물만 있는 장부나 완전 헤지 장부는 시가가 0 일 수 있고(노트 02 §11: WTI 음수 구간에서는 음수도 된다), 그때 비율은 정의되지 않는다. 마진 모듈이 NAV 대비 IM 을 보고하지 않는 이유도 같다(§8-4 의 (b) 기각 사유).
+
 ### 8-5. `risk_measures` 인덱스 설계
 
 | 인덱스 | 예상 조회 패턴 | 비고 |
@@ -420,3 +422,20 @@ A2 를 시작하며 노트 00~08 을 다시 읽었을 때 문서만으로 답이
 ### 10-4. 기록되지 않은 것 3 — 청산회원(clearing member)은 무엇인가 (승인 대기)
 
 Cover-2 는 회원이 셋 이상이어야 뜻이 있다. 현재 장부는 `MAIN` 하나이고 회원 개념이 없다. 권고: **회원 = `portfolio_code`**. 합성 회원 장부 N 개(예: `CM_A` … `CM_D`, MAIN 포함)를 `config/positions_members.csv` 로 두고 `positions_main.csv` 처럼 값 고정 테스트로 박는다. §2-3 의 "`portfolios` 테이블은 메타가 둘 이상 생기면" 규칙에 대해: 회원 메타(디폴트 펀드 분담금)는 **입력이 아니라 산출**(Cover-2 결과에서 배분)이므로 지금도 메타는 기준통화 하나뿐 — 테이블은 여전히 만들지 않는다. 회원 장부의 구성은 임의값이며 `decisions.md` 에 그렇게 적는다.
+
+### 10-5. 전수 조사 (2026-09-15, JK 지시 A) — DDL 에만 있던 구속 조건과 노트와 어긋나는 COMMENT
+
+`im_floor` 건을 계기로 마이그레이션 0001~0008 의 COMMENT·CHECK·카탈로그 행을 전부 노트와 대조했다. 아래는 **노트 본문에 없던 것**이고, 이 절이 그 기록이다. 규칙은 CLAUDE.md §2 "Binding decisions live in the note body" 로 올렸다.
+
+| # | 위치 | 구속 조건 | 노트 상태 → 조치 |
+|---|---|---|---|
+| 1 | 0002 `risk_measure_types` | `im_floor`·`im_stress_blend` 는 "amount added by" — IM 분해가 증분 구조 | §10-1 에 이관 (2026-09-15) |
+| 2 | 0002 `risk_runs` | `CHECK (positions_as_of <= as_of_date)` | §2-4·§8-3 의 DDL 초안에 없음. **이관**: 미래 스냅샷으로 과거를 평가하는 실행은 DB 가 거부한다 — `load_snapshot` 의 "≤ D 최신" 규칙(§2-3)의 DB 측 강제 |
+| 3 | 0003 `v_risk_headline` | `portfolio_value = 0` 이면 `*_frac` 는 NULL | §8-4 에 이관 |
+| 4 | 0006 `backtest_results` | `CHECK (pnl_date > as_of_date)`, PK = `run_id`; `traffic_light` 어휘 `green/yellow/red` 와 `pla_zone` 어휘 `green/amber/red` 가 **다르다** (Basel 은 yellow, FRTB 는 amber — 각 규정의 용어를 그대로 씀) | 노트 06 §6-4 에 이관 |
+| 5 | 0008 `backtest_results` | `var_h_block` 은 h = 1 이면 NULL(= `var_99`); `exception` 의 COMMENT "Official: −hpl > horizon-consistent VaR" | 노트 06 §6-1 에 열 목록으로 이관 |
+| 6 | 0001 `instruments.multiplier` COMMENT | "P&L = quantity × multiplier × price change" | **노트 04 §4 와 어긋난다** (FX 는 q·m·S·(e^x−1), 국채는 −DV01·x). 0009 에서 COMMENT 를 노트 04 §4 문장으로 교체 |
+| 7 | 0001 `instruments.quote_type` COMMENT | "price → log returns on adj_close; yield → bp" | **0003 의 `return_type` 이 대체했다** (에너지는 price 이지만 absolute). 0009 에서 "price → level in currency; yield → percent; how it is differenced is `return_type`" 로 교체 |
+| 8 | 0002 `risk_runs.tag` COMMENT | "daily_batch = official series used by backtests" | §2-4 와 일치. 0009 에서 `margin_batch` 를 추가(§10-2) |
+
+확인했으나 노트와 일치해 조치 없음: 0001 의 `instruments`·`prices`·`positions` COMMENT 전부(§2), 0002 의 `unit` 어휘·`confidence` NULL 규칙·`UNIQUE NULLS NOT DISTINCT`(§8-3~8-4), 0003 `instrument_type`·`return_type` 어휘(노트 02 §12), 0004 `etl_runs` 의 `status` 어휘·`findings` 스키마·`CHECK (finished_at >= started_at)`(노트 03 §12), 0006 `risk_runs.universe`(노트 06 §3), 0007 `stress_results.kind` 어휘·UNIQUE(노트 07 §5).

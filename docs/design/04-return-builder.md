@@ -81,3 +81,8 @@ pnl.pnl_matrix(changes: ndarray(n×k), levels_today: Series, positions: {ticker:
 - **1M 국채 0·음수 수익률**: bp 차분과 DV01 식 모두 정의되나, y≈0 에서 D_mod≈T 로 안정. 테스트로 고정.
 - **FX 크로스의 두 원계열 결측 불일치**: EURUSD 와 EURJPY 중 하나만 결측이면 intersection 이 그 날짜를 버린다. 크로스는 정렬 **후** 계산한다.
 - **positions.quantity 의 의미**가 종류마다 다르다(외화 수량 / 물량 / 액면). 노트 01 §2-3 의 "quantity × multiplier × Δprice" 는 price 계열에만 맞고 이 노트가 나머지를 정의한다 — 노트 01 에 상호 참조 추가.
+
+## 7. 보강 (2026-09-15) — docstring 에만 있던 계약
+
+- **`changes` 와 `levels` 는 같은 인덱스를 공유하고, 정렬 후 첫 날짜는 둘 다 버린다.** 첫 날짜에는 변화량이 없으므로 `changes` 에서 빠지는데, `levels` 도 같이 잘라야 `rm.levels.iloc[t]` 와 `rm.changes.iloc[t]` 가 같은 날을 가리킨다. 이 계약을 모른 채 `levels` 의 위치로 기대값을 적으면 하루가 밀린다 — `decisions.md` §5 의 2026-09-13 세 번째 정정이 정확히 그 사고였다. 마진·커버리지 백테스트가 `iloc` 로 날짜를 다룰 때 같은 계약을 따른다.
+- **FX 크로스에는 `EURUSD` 가 필수다.** `to_usd_per_unit` 은 ECB 원계열이 하나라도 있으면 `EURUSD` 열을 요구한다(S_CCY = EURUSD / EURCCY). `EURUSD` 를 제외한 표본 집합은 만들 수 없다 — `config/universes.toml` 의 `exclude` 에 넣으면 빌더가 실패한다.
