@@ -1,4 +1,4 @@
-"""Cover-N default fund from the members' stress losses (design note 09 §7).
+"""Cover-N default fund from the members' stress losses (design note 09 §7, §7-1).
 
 Members are ``positions.portfolio_code`` values. For every scenario of the stress file the
 unscaled loss of each member's book (note 07: historical replay / hypothetical shocks) is
@@ -6,6 +6,14 @@ compared with the IM recorded for that member on the date; the default fund is t
 over scenarios, sum of the ``cover`` biggest uncovered excesses [PFMI Principle 4 KC 4;
 EMIR Art. 42(3)]. Shock sizes come only from the scenario file; :func:`cover_n` is pure;
 :func:`record` is the only writer of ``default_fund_runs`` / ``default_fund_results``.
+
+Two bases (JK, 2026-09-15). The *official* basis is ``mpor``: a historical scenario
+contributes the worst ``horizon``-day (MPOR) window inside its date range, because the
+default fund covers the loss over the close-out period, not over a ten-month path
+[PFMI Principle 4: losses "in extreme but plausible market conditions" over the period the
+CCP holds the defaulter's positions]. The ``path`` basis (full cumulative change over the
+window) is kept as a separate path / liquidity analysis. Hypothetical shocks are instantaneous
+and identical under both bases.
 """
 
 from __future__ import annotations
@@ -15,13 +23,17 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+import numpy as np
 import psycopg
 from psycopg.types.json import Jsonb
 
 from risk_engine.data.etl.contract import InstrumentSpec
+from risk_engine.margin.core import block_sums
 from risk_engine.margin.engine import OFFICIAL_TAG
 from risk_engine.risk import stress
 from risk_engine.risk.engine import prepare
+from risk_engine.risk.measures import to_loss
+from risk_engine.risk.pnl import pnl_matrix
 from risk_engine.risk.positions import load_snapshot
 from risk_engine.risk.returns import ReturnMatrix
 
@@ -46,12 +58,19 @@ class MemberIm:
 
 @dataclass(frozen=True, slots=True)
 class ScenarioLoss:
-    """Unscaled stress loss of one member under one scenario (loss positive)."""
+    """Unscaled stress loss of one member under one scenario (loss positive).
+
+    ``window_start`` / ``window_end`` name the aligned dates the loss was taken over: the
+    whole scenario window on the ``path`` basis, the worst MPOR-length block on the ``mpor``
+    basis, nothing for a hypothetical shock.
+    """
 
     scenario: str
     kind: str
     portfolio_code: str
     stress_loss: float
+    window_start: date | None = None
+    window_end: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,18 +188,74 @@ def load_inputs(
     return rm, specs, books, ims
 
 
+def worst_window_loss(
+    rm: ReturnMatrix,
+    name: str,
+    start: date,
+    end: date,
+    horizon: int,
+    positions: Mapping[str, float],
+    specs: Mapping[str, InstrumentSpec],
+) -> ScenarioLoss:
+    """Worst ``horizon``-day cumulative loss inside ``[start, end]``, unscaled, on today's book.
+
+    Same snapping as :func:`risk_engine.risk.stress.historical` (start forward, end back).
+    Blocks are sums of ``horizon`` consecutive change vectors mapped once through the exact
+    P&L (as the block bootstrap and the realised MPOR loss are). A window shorter than
+    ``horizon`` contributes its whole cumulative change (a loss over fewer days is a valid
+    loss over the MPOR).
+    """
+    idx = rm.changes.index
+    a, b = stress._snap(idx, start, "right"), stress._snap(idx, end, "left")
+    if b <= a:
+        raise ValueError(f"{name}: window {start}..{end} has no aligned observations")
+    block = rm.changes.iloc[a + 1 : b + 1]
+    arr = block.to_numpy(dtype="float64")
+    h = min(horizon, len(arr))
+    sums = block_sums(arr, h)
+    pnl = pnl_matrix(
+        sums, list(rm.changes.columns), rm.levels.iloc[-1], dict(positions), specs, rm.factor_of
+    )
+    losses = to_loss(pnl).sum(axis=1)
+    worst = int(np.argmax(losses))
+    return ScenarioLoss(
+        scenario=name,
+        kind="historical",
+        portfolio_code="",
+        stress_loss=float(losses[worst]),
+        window_start=block.index[worst].date(),
+        window_end=block.index[worst + h - 1].date(),
+    )
+
+
 def stress_losses(
     rm: ReturnMatrix,
     books: Mapping[str, Mapping[str, float]],
     specs: Mapping[str, InstrumentSpec],
     scen: stress.ScenarioSet,
+    *,
+    horizon: int | None = None,
 ) -> list[ScenarioLoss]:
-    """Every (scenario, member) loss from the scenario file, unscaled (note 07 §1-§2)."""
+    """Every (scenario, member) loss from the scenario file, unscaled (note 07 §1-§2).
+
+    ``horizon=None`` is the ``path`` basis (whole-window cumulative change);
+    ``horizon=h`` is the ``mpor`` basis (worst h-day block inside each window).
+    """
     out: list[ScenarioLoss] = []
     for code, book in books.items():
         for name, spec in scen.historical.items():
-            r = stress.historical(rm, name, spec["start"], spec["end"], book, specs)
-            out.append(ScenarioLoss(name, "historical", code, r.loss))
+            if horizon is None:
+                r = stress.historical(rm, name, spec["start"], spec["end"], book, specs)
+                out.append(
+                    ScenarioLoss(name, "historical", code, r.loss, r.window_start, r.window_end)
+                )
+            else:
+                w = worst_window_loss(rm, name, spec["start"], spec["end"], horizon, book, specs)
+                out.append(
+                    ScenarioLoss(
+                        name, "historical", code, w.stress_loss, w.window_start, w.window_end
+                    )
+                )
         for name, spec in scen.hypothetical.items():
             r = stress.hypothetical(rm, name, spec, book, specs)
             out.append(ScenarioLoss(name, "hypothetical", code, r.loss))
@@ -211,8 +286,23 @@ def record(
     margin_params_sha256: str,
     params: Mapping[str, Any],
     code_version: str | None = None,
+    losses: Sequence[ScenarioLoss] = (),
 ) -> int:
-    """Insert the header and every (scenario, member) row atomically; returns the run id."""
+    """Insert the header and every (scenario, member) row atomically; returns the run id.
+
+    ``params`` must carry ``basis`` (``mpor`` | ``path``); the windows actually used per
+    (scenario, member) are stored from ``losses`` under ``params.windows``.
+    """
+    if params.get("basis") not in ("mpor", "path"):
+        raise ValueError("params['basis'] must be 'mpor' or 'path'")
+    windows = {
+        f"{sl.scenario}/{sl.portfolio_code}": [
+            sl.window_start.isoformat(),
+            sl.window_end.isoformat(),
+        ]
+        for sl in losses
+        if sl.window_start is not None and sl.window_end is not None
+    }
     with conn.transaction():
         got = conn.execute(
             INSERT_RUN,
@@ -226,7 +316,7 @@ def record(
                 report.default_fund,
                 report.binding_scenario,
                 list(report.binding_members),
-                Jsonb({**params, "by_scenario": report.by_scenario}),
+                Jsonb({**params, "by_scenario": report.by_scenario, "windows": windows}),
                 code_version,
             ),
         ).fetchone()

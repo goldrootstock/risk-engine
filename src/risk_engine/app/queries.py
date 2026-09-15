@@ -136,7 +136,7 @@ DEFAULT_FUND_RUN_SQL = """
 SELECT default_fund_run_id, as_of_date, scenario_set_sha256, margin_params_sha256, n_members,
        cover, default_fund, binding_scenario, binding_members, params, code_version, created_at
 FROM default_fund_runs
-WHERE universe = %(universe)s
+WHERE universe = %(universe)s AND coalesce(params->>'basis', 'path') = %(basis)s
   AND (%(as_of)s::date IS NULL OR as_of_date <= %(as_of)s)
 ORDER BY as_of_date DESC, default_fund_run_id DESC
 LIMIT 1
@@ -550,16 +550,28 @@ def coverage_days(
 
 
 def default_fund_latest(
-    conn: psycopg.Connection[Any], universe: str, *, as_of: date | None = None
+    conn: psycopg.Connection[Any],
+    universe: str,
+    *,
+    basis: str = "mpor",
+    as_of: date | None = None,
 ) -> Row | None:
-    """Newest Cover-N sizing on/before ``as_of`` with every (scenario, member) row."""
-    r = conn.execute(DEFAULT_FUND_RUN_SQL, {"universe": universe, "as_of": as_of}).fetchone()
+    """Newest Cover-N sizing on/before ``as_of`` with every (scenario, member) row.
+
+    ``basis``: ``mpor`` (official — worst MPOR window inside each historical scenario) or
+    ``path`` (whole-window cumulative loss, the path / liquidity view). Runs recorded before
+    the basis existed count as ``path``.
+    """
+    r = conn.execute(
+        DEFAULT_FUND_RUN_SQL, {"universe": universe, "basis": basis, "as_of": as_of}
+    ).fetchone()
     if r is None:
         return None
     rows = conn.execute(DEFAULT_FUND_RESULTS_SQL, {"id": int(r[0])}).fetchall()
     return {
         "default_fund_run_id": int(r[0]),
         "universe": universe,
+        "basis": basis,
         "as_of": _iso(r[1]),
         "scenario_set_sha256": r[2],
         "margin_params_sha256": r[3],

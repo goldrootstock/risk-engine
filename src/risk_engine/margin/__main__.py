@@ -213,30 +213,42 @@ def run_default_fund(
     rm, specs, books, ims = default_fund.load_inputs(
         conn, args.universe, args.as_of, members, mpor_days=mp.mpor_days, tag=args.tag
     )
-    losses = default_fund.stress_losses(rm, books, specs, scen)
-    rep = default_fund.cover_n(losses, ims, mp.cover)
-    run_id = default_fund.record(
-        conn,
-        rep,
-        universe=args.universe,
-        as_of=args.as_of,
-        scenario_sha256=scen.sha256,
-        margin_params_sha256=mp.sha256,
-        params={"members": members, "tag": args.tag, "allocation": mp.allocation},
-        code_version=version,
-    )
-    print(
-        f"default_fund_run_id={run_id} as_of={args.as_of} cover={rep.cover} "
-        f"default_fund={rep.default_fund:,.0f} scenario={rep.binding_scenario} "
-        f"members={','.join(rep.binding_members)}"
-    )
-    for code in members:
-        im = ims[code].im
-        worst = max((r for r in rep.rows if r.portfolio_code == code), key=lambda r: r.uncovered)
-        print(
-            f"  {code:16} im={im:14,.0f} worst={worst.scenario:22} "
-            f"loss={worst.stress_loss:14,.0f} uncovered={worst.uncovered:14,.0f}"
+    # official basis first (worst MPOR window inside each scenario), then the path basis
+    for basis, horizon in (("mpor", mp.mpor_days), ("path", None)):
+        losses = default_fund.stress_losses(rm, books, specs, scen, horizon=horizon)
+        rep = default_fund.cover_n(losses, ims, mp.cover)
+        run_id = default_fund.record(
+            conn,
+            rep,
+            universe=args.universe,
+            as_of=args.as_of,
+            scenario_sha256=scen.sha256,
+            margin_params_sha256=mp.sha256,
+            params={
+                "basis": basis,
+                "horizon": horizon,
+                "members": members,
+                "tag": args.tag,
+                "allocation": mp.allocation,
+            },
+            code_version=version,
+            losses=losses,
         )
+        label = "official (worst MPOR window)" if basis == "mpor" else "path (whole window)"
+        print(
+            f"default_fund_run_id={run_id} basis={basis} [{label}] as_of={args.as_of} "
+            f"cover={rep.cover} default_fund={rep.default_fund:,.0f} "
+            f"scenario={rep.binding_scenario} members={','.join(rep.binding_members)}"
+        )
+        for code in members:
+            im = ims[code].im
+            worst = max(
+                (r for r in rep.rows if r.portfolio_code == code), key=lambda r: r.uncovered
+            )
+            print(
+                f"  {code:16} im={im:14,.0f} worst={worst.scenario:22} "
+                f"loss={worst.stress_loss:14,.0f} uncovered={worst.uncovered:14,.0f}"
+            )
     return 0
 
 

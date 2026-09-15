@@ -9,6 +9,7 @@ import pandas as pd
 import psycopg
 import pytest
 
+from risk_engine.data.etl.contract import InstrumentSpec
 from risk_engine.data.etl.load import read_universe, upsert_instruments
 from risk_engine.data.migrate import upgrade
 from risk_engine.margin import default_fund as df
@@ -126,10 +127,19 @@ def test_default_fund_round_trip(conn: psycopg.Connection[Any]) -> None:
         seed=1,
         sha256="s" * 64,
     )
-    losses = df.stress_losses(rm, books, specs, scen)
+    losses = df.stress_losses(rm, books, specs, scen, horizon=mp.mpor_days)  # official basis
+    path = df.stress_losses(rm, books, specs, scen)  # path basis
     rep = df.cover_n(losses, ims, mp.cover)
     conn.execute("SET default_transaction_read_only = off")
     assert len(losses) == 6 and rep.n_members == 3 and rep.cover == 2
+    # the worst 2-day block inside a window never loses less than ... nothing in general, but
+    # it is bounded by the largest 2-day move: windows are recorded and lie inside the scenario
+    for sl in losses:
+        if sl.kind == "historical":
+            assert sl.window_start is not None and sl.window_end is not None
+            assert idx[-40].date() <= sl.window_start <= sl.window_end <= idx[-20].date()
+            assert (sl.window_end - sl.window_start).days <= 4  # two aligned business days
+    assert all(p.window_start == idx[-40].date() for p in path if p.kind == "historical")
     # oil -30 %: the long-only energy book is uncovered by far more than the WTI-Brent hedge
     oil = {r.portfolio_code: r for r in rep.rows if r.scenario == "oil_down_30"}
     assert oil["E"].uncovered > oil["H"].uncovered and oil["R"].uncovered == 0.0
@@ -141,17 +151,31 @@ def test_default_fund_round_trip(conn: psycopg.Connection[Any]) -> None:
         as_of=as_of,
         scenario_sha256=scen.sha256,
         margin_params_sha256=mp.sha256,
-        params={"members": list(MEMBERS)},
+        params={"basis": "mpor", "horizon": 2, "members": list(MEMBERS)},
         code_version="test",
+        losses=losses,
     )
+    with pytest.raises(ValueError, match="basis"):
+        df.record(
+            conn,
+            rep,
+            universe="t",
+            as_of=as_of,
+            scenario_sha256="s" * 64,
+            margin_params_sha256=mp.sha256,
+            params={},
+            code_version="test",
+        )
     hdr = conn.execute(
         "SELECT default_fund, binding_scenario, binding_members, n_members, cover,"
-        " params->'by_scenario' FROM default_fund_runs WHERE default_fund_run_id = %s",
+        " params->'by_scenario', params->>'basis', params->'windows'"
+        " FROM default_fund_runs WHERE default_fund_run_id = %s",
         (run_id,),
     ).fetchone()
     assert hdr is not None and hdr[0] == rep.default_fund and hdr[1] == rep.binding_scenario
     assert tuple(hdr[2]) == rep.binding_members and (hdr[3], hdr[4]) == (3, 2)
-    assert set(hdr[5]) == {"win", "oil_down_30"}
+    assert set(hdr[5]) == {"win", "oil_down_30"} and hdr[6] == "mpor"
+    assert set(hdr[7]) == {f"win/{m}" for m in MEMBERS}
     rows = conn.execute(
         "SELECT count(*), sum(uncovered) FROM default_fund_results WHERE default_fund_run_id = %s",
         (run_id,),
@@ -163,3 +187,33 @@ def test_default_fund_round_trip(conn: psycopg.Connection[Any]) -> None:
         " ON r.run_id = d.im_run_id WHERE r.tag = 'margin_batch'"
     ).fetchone()
     assert fk == (3,)
+
+
+def test_worst_window_loss_picks_the_largest_two_day_move_not_the_path() -> None:
+    """A window whose path nets to ~0 still has a large worst 2-day block."""
+    from risk_engine.risk.returns import build
+
+    specs = {"WTI": InstrumentSpec(3, "eia", "RWTC", "WTI", "price", "absolute", "USD", 1.0)}
+    dates = pd.bdate_range("2024-01-01", periods=30)
+    lv = pd.Series(60.0, index=dates)
+    lv.iloc[10] = 50.0  # -10 on day 10, then flat: a one-day crash that never recovers
+    lv.iloc[11] = 45.0  # -5 more on day 11
+    lv.iloc[12:] = 60.0  # full recovery on day 12: the whole-window path is 0
+    rm = build(pd.DataFrame({"WTI": lv}), specs)
+    idx = rm.changes.index
+    book = {"WTI": 1_000.0}
+    w = df.worst_window_loss(rm, "w", idx[2].date(), idx[20].date(), 2, book, specs)
+    assert w.stress_loss == pytest.approx(15_000.0)  # -10 then -5 over two consecutive days
+    assert (w.window_start, w.window_end) == (dates[10].date(), dates[11].date())
+    path = df.stress_losses(
+        rm,
+        {"M": book},
+        specs,
+        stress.ScenarioSet(
+            {"w": {"start": idx[2].date(), "end": idx[20].date()}}, {}, 1, 1, "s" * 64
+        ),
+    )
+    assert path[0].stress_loss == pytest.approx(0.0, abs=1e-9)
+    # changes.index drops the first level date (note 04 §7): idx[8]..idx[9] = dates[9]..dates[10]
+    short = df.worst_window_loss(rm, "one", idx[8].date(), idx[9].date(), 2, book, specs)
+    assert short.stress_loss == pytest.approx(10_000.0)  # window shorter than h: cumulative

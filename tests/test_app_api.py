@@ -280,7 +280,10 @@ def test_margin_endpoints(client: Any) -> None:
         "/margin/coverage/days", params={"universe": "u", "portfolio": "T", "breaches_only": 1}
     ).json()
     assert len(days) == 1 and days[0]["shortfall"] == 1000.0 and days[0]["breach_span"] is False
-    dfr = client.get("/default-fund", params={"universe": "u"}).json()
+    dfr = client.get("/default-fund", params={"universe": "u", "basis": "path"}).json()
     assert dfr["default_fund"] == 5000.0 and dfr["binding_members"] == ["T", "U"]
     assert [r["uncovered"] for r in dfr["results"]] == [3000.0, 2000.0]
+    assert dfr["basis"] == "path"  # a run recorded without a basis counts as path
+    assert client.get("/default-fund", params={"universe": "u"}).status_code == 404  # no mpor run
+    assert client.get("/default-fund", params={"universe": "u", "basis": "x"}).status_code == 422
     assert client.get("/default-fund", params={"universe": "nope"}).status_code == 404

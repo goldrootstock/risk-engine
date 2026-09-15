@@ -348,7 +348,8 @@ def _margin_section(
     if dfr is not None:
         st.caption(
             f"default fund as of {dfr['as_of']} · Cover-{dfr['cover']} · {dfr['n_members']} "
-            f"members · scenario set {dfr['scenario_set_sha256'][:12]}"
+            f"members · basis {dfr['basis']} (mpor = worst MPOR window inside each scenario, "
+            f"official) · scenario set {dfr['scenario_set_sha256'][:12]}"
         )
         c1, c2, c3 = st.columns(3)
         c1.metric("default fund", _money(dfr["default_fund"]))
@@ -392,7 +393,11 @@ def main() -> None:
             index=universes.index("from_1999") if "from_1999" in universes else 0,
         )
         portfolios = sorted({c["portfolio"] for c in cat if c["universe"] == universe})
-        portfolio = st.selectbox("portfolio", portfolios)
+        portfolio = st.selectbox(
+            "portfolio",
+            portfolios,
+            index=portfolios.index("MAIN") if "MAIN" in portfolios else 0,
+        )
         tags = sorted(
             {c["tag"] for c in cat if c["universe"] == universe and c["horizon_days"] == 1}
         )
