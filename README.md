@@ -42,13 +42,20 @@ model trustworthy?*
 - **Legacy SPAN asks for 1.9× the FHS margin and still breaches on the two tail days.**
   Summing per-instrument scan ranges with partial spread credits is expensive in normal
   markets and weak in the tail.
-- **Cover-2 depends on the horizon you give the scenarios.** Over whole scenario paths the
-  2022 ten-month rate rise sets it (49.6 M, the long-duration member). Over the 2-day MPOR —
-  the horizon a CCP actually holds a defaulter's positions — the historical scenarios are
-  set by the WTI-long/Brent-short member on 2020-04-17→20 (3.4× its margin): the same
-  correlation-dependent structure that raised the A1 ES 1.74×. The one thing still above it
-  is an instantaneous +200 bp hypothetical shock, which has the same horizon problem the
-  path had — flagged, not resolved.
+- **The default fund is set by the hedge book — the one that looks safest by frequency.**
+  Over the 2-day close-out horizon a CCP actually faces, the official Cover-2 (24.3 M) is set
+  by the WTI-long/Brent-short member on 2020-04-17→20 at 3.4× its margin — the same
+  correlation-dependent structure that raised the A1 ES 1.74×. That member has the fewest
+  breaches of the five books (6) and the largest worst breach (5.43×): the A1 lesson that
+  frequency tests do not see size, repeated on different data. The two larger figures the
+  official number excludes — 28.8 M with Basel IRRBB supervisory shocks added, 49.6 M over
+  whole scenario paths — are kept in the same table, because choosing the smaller number
+  has to stay visible.
+- **Legacy SPAN is inconsistent across books, not just expensive:** breaches range from 2 to
+  27 on the same methodology (13×). It over-charges hedged books (2× the FHS margin) and
+  under-charges the long-only rates book in volatility regime shifts (0.8×, 0.63× in 2022)
+  because its scan ranges are unfiltered trailing quantiles and its only diversification is
+  an ad-hoc credit table — the reason CCPs moved to VaR-based margin.
 
 ## Reproduce
 
