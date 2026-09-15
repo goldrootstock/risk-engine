@@ -23,8 +23,8 @@ READ_ONLY_OPTIONS = "-c default_transaction_read_only=on"
 app = FastAPI(
     title="risk-engine",
     version="0.1.0",
-    description="Recorded ES / VaR, backtest and stress results. Read-only; writes happen "
-    "through the CLI only.",
+    description="Recorded ES / VaR, backtest, stress and margin results. Read-only; writes "
+    "happen through the CLI only.",
 )
 
 
@@ -194,3 +194,58 @@ def stress(
     if st is None:
         raise HTTPException(404, f"no stress run for {universe}/{portfolio}")
     return st
+
+
+@app.get("/margin")
+def margin(
+    conn: Conn,
+    universe: Universe = "from_1999",
+    portfolio: Portfolio = "MAIN",
+    tag: str = "margin_batch",
+    horizon_days: int = 2,
+    as_of: AsOf = None,
+) -> dict[str, Any]:
+    """Newest margin run: IM decomposition, MPOR tail measures, per-instrument add-ons."""
+    run = queries.margin_latest(
+        conn, universe, portfolio, tag=tag, horizon_days=horizon_days, as_of=as_of
+    )
+    if run is None:
+        raise HTTPException(404, f"no margin run for {universe}/{portfolio} on or before {as_of}")
+    return run
+
+
+@app.get("/margin/coverage")
+def margin_coverage(
+    conn: Conn, universe: Universe = "from_1999", portfolio: Portfolio = "MAIN"
+) -> dict[str, Any]:
+    """Newest margin coverage batch: window statistics and day-level totals."""
+    cv = queries.coverage_latest(conn, universe, portfolio)
+    if cv is None:
+        raise HTTPException(404, f"no coverage backtest for {universe}/{portfolio}")
+    return cv
+
+
+@app.get("/margin/coverage/days")
+def margin_coverage_days(
+    conn: Conn,
+    universe: Universe = "from_1999",
+    portfolio: Portfolio = "MAIN",
+    start: date | None = None,
+    end: date | None = None,
+    breaches_only: bool = False,
+) -> list[dict[str, Any]]:
+    """Day rows of the coverage backtest (realised loss, IM yardsticks, breach flags)."""
+    return queries.coverage_days(
+        conn, universe, portfolio, start=start, end=end, breaches_only=breaches_only
+    )
+
+
+@app.get("/default-fund")
+def default_fund(
+    conn: Conn, universe: Universe = "from_1999", as_of: AsOf = None
+) -> dict[str, Any]:
+    """Newest Cover-N default fund sizing with every (scenario, member) row."""
+    dfr = queries.default_fund_latest(conn, universe, as_of=as_of)
+    if dfr is None:
+        raise HTTPException(404, f"no default fund run for {universe}")
+    return dfr

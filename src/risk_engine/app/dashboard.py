@@ -57,6 +57,24 @@ def _stress(url: str, universe: str, portfolio: str) -> dict[str, Any] | None:
         return queries.stress_latest(conn, universe, portfolio)
 
 
+@st.cache_data(ttl=60)
+def _margin(url: str, universe: str, portfolio: str) -> dict[str, Any] | None:
+    with connect_read_only(url) as conn:
+        return queries.margin_latest(conn, universe, portfolio)
+
+
+@st.cache_data(ttl=60)
+def _coverage(url: str, universe: str, portfolio: str) -> dict[str, Any] | None:
+    with connect_read_only(url) as conn:
+        return queries.coverage_latest(conn, universe, portfolio)
+
+
+@st.cache_data(ttl=60)
+def _default_fund(url: str, universe: str) -> dict[str, Any] | None:
+    with connect_read_only(url) as conn:
+        return queries.default_fund_latest(conn, universe)
+
+
 def _money(x: float | None) -> str:
     return "—" if x is None else f"{x:,.0f}"
 
@@ -251,6 +269,112 @@ def _stress_section(stress: dict[str, Any] | None) -> None:
     st.altair_chart(chart, width="stretch")
 
 
+IM_PARTS = [
+    "im_core",
+    "im_floor",
+    "im_stress_blend",
+    "im_liquidity_addon",
+    "im_concentration_addon",
+]
+
+
+def _margin_section(
+    run: dict[str, Any] | None, cov: dict[str, Any] | None, dfr: dict[str, Any] | None
+) -> None:
+    st.subheader("Margin — 2-day MPOR (design note 09)")
+    if run is None:
+        st.info("no margin_batch run for this selection")
+    else:
+        im = run["im"]
+        st.caption(
+            f"run {run['run_id']} as of {run['as_of']} · h = {run['horizon_days']} · scenarios "
+            f"{run['n_scenarios']} · margin_params sha "
+            f"{str((run['params'] or {}).get('margin_params_sha256', ''))[:12]}"
+        )
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("IM", _money(im.get("im")))
+        c2.metric("core (ES 99 %, 2d)", _money(im.get("im_core")))
+        c3.metric("legacy SPAN", _money(im.get("im_span_legacy")))
+        ratio = im.get("im_span_legacy", 0) / im["im"] if im.get("im") else None
+        c4.metric("SPAN / IM", f"{ratio:.2f}" if ratio else "—")
+        parts = pd.DataFrame({"part": IM_PARTS, "amount": [im.get(k, 0.0) for k in IM_PARTS]})
+        st.altair_chart(
+            alt.Chart(parts)
+            .mark_bar()
+            .encode(
+                x=alt.X("amount:Q", title="IM decomposition (increments, sum = IM)"),
+                y=alt.Y("part:N", sort=IM_PARTS, title=None),
+                tooltip=["part", alt.Tooltip("amount:Q", format=",.0f")],
+            )
+            .properties(height=140),
+            width="stretch",
+        )
+    if cov is not None:
+        t = cov["totals"]
+        st.caption(
+            f"coverage backtest {t['first']} → {t['last']} · batch {cov['created_at'][:19]} · "
+            f"target {cov['windows'][0]['target']:.0%}"
+        )
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("days", f"{t['days']:,}")
+        c2.metric("breaches (IM)", t["breaches"], help=f"coverage {t['coverage']:.4f}")
+        c3.metric("breaches (core only)", t["breaches_core"])
+        c4.metric("breaches (SPAN)", t["breaches_span"])
+        df = pd.DataFrame(cov["windows"])
+        cols = [
+            "window_start",
+            "window_end",
+            "n_obs",
+            "breaches",
+            "breaches_core",
+            "breaches_span",
+            "coverage",
+            "kupiec_p",
+            "max_shortfall",
+            "max_shortfall_over_im",
+        ]
+        st.dataframe(
+            df[cols].style.format(
+                {
+                    "coverage": "{:.4f}",
+                    "kupiec_p": "{:.3f}",
+                    "max_shortfall": "{:,.0f}",
+                    "max_shortfall_over_im": "{:.2f}",
+                }
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+    if dfr is not None:
+        st.caption(
+            f"default fund as of {dfr['as_of']} · Cover-{dfr['cover']} · {dfr['n_members']} "
+            f"members · scenario set {dfr['scenario_set_sha256'][:12]}"
+        )
+        c1, c2, c3 = st.columns(3)
+        c1.metric("default fund", _money(dfr["default_fund"]))
+        c2.metric("binding scenario", dfr["binding_scenario"])
+        c3.metric("binding members", ", ".join(dfr["binding_members"]))
+        res = pd.DataFrame(dfr["results"])
+        chart = (
+            alt.Chart(res)
+            .mark_bar()
+            .encode(
+                x=alt.X("uncovered:Q", title="stress loss above IM"),
+                y=alt.Y("scenario:N", sort="-x", title=None),
+                color="portfolio:N",
+                tooltip=[
+                    "scenario",
+                    "portfolio",
+                    alt.Tooltip("stress_loss:Q", format=",.0f"),
+                    alt.Tooltip("im:Q", format=",.0f"),
+                    alt.Tooltip("uncovered:Q", format=",.0f"),
+                ],
+            )
+            .properties(height=max(160, 14 * res["scenario"].nunique()))
+        )
+        st.altair_chart(chart, width="stretch")
+
+
 def main() -> None:
     """Page body."""
     st.set_page_config(page_title="risk-engine", layout="wide")
@@ -269,7 +393,9 @@ def main() -> None:
         )
         portfolios = sorted({c["portfolio"] for c in cat if c["universe"] == universe})
         portfolio = st.selectbox("portfolio", portfolios)
-        tags = sorted({c["tag"] for c in cat if c["universe"] == universe})
+        tags = sorted(
+            {c["tag"] for c in cat if c["universe"] == universe and c["horizon_days"] == 1}
+        )
         tag = st.selectbox(
             "tag", tags, index=tags.index("daily_batch") if "daily_batch" in tags else 0
         )
@@ -285,6 +411,11 @@ def main() -> None:
     _series_section(_series(url, universe, portfolio, tag), days)
     _backtest_section(_backtest(url, universe, portfolio))
     _stress_section(_stress(url, universe, portfolio))
+    _margin_section(
+        _margin(url, universe, portfolio),
+        _coverage(url, universe, portfolio),
+        _default_fund(url, universe),
+    )
 
 
 main()

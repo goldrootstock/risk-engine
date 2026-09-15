@@ -83,6 +83,38 @@ def _seed(conn: psycopg.Connection[Any]) -> None:
                   (%(r)s, 'im_core', NULL, 'portfolio', '', 11000.0)""",
         {"r": int(margin[0])},
     )
+    conn.execute(
+        """INSERT INTO margin_coverage_results (run_id, universe, portfolio_code, as_of_date,
+               pnl_date, h_business_days, realised_loss, im, im_core, im_span_legacy, im_h_block,
+               breach, breach_raw, breach_core, breach_span, shortfall, attribution)
+           VALUES (%s, 'u', 'T', '2024-01-12', '2024-01-16', 2, 13000.0, 12000.0, 11000.0,
+                   20000.0, NULL, true, true, true, false, 1000.0, %s)""",
+        (int(margin[0]), Jsonb({"WTI": 13000.0, "_total": 13000.0})),
+    )
+    conn.execute(
+        """INSERT INTO margin_coverage_summaries (universe, portfolio_code, window_start,
+               window_end, n_obs, breaches, breaches_raw, breaches_core, breaches_span, coverage,
+               target, kupiec_p, max_shortfall, max_shortfall_over_im, params)
+           VALUES ('u', 'T', '2024-01-12', '2024-01-12', 1, 1, 1, 1, 0, 0.0, 0.99, 0.001, 1000.0,
+                   0.0833, %s)""",
+        (Jsonb({"margin_params_sha256": "m" * 64}),),
+    )
+    dfr = conn.execute(
+        """INSERT INTO default_fund_runs (universe, as_of_date, scenario_set_sha256,
+               margin_params_sha256, n_members, cover, default_fund, binding_scenario,
+               binding_members, params)
+           VALUES ('u', '2024-01-12', %s, %s, 2, 2, 5000.0, 'gfc_2008', %s, '{}')
+           RETURNING default_fund_run_id""",
+        ("b" * 64, "m" * 64, ["T", "U"]),
+    ).fetchone()
+    assert dfr is not None
+    conn.execute(
+        """INSERT INTO default_fund_results (default_fund_run_id, scenario, kind, portfolio_code,
+               im_run_id, stress_loss, im, uncovered)
+           VALUES (%(d)s, 'gfc_2008', 'historical', 'T', %(r)s, 15000.0, 12000.0, 3000.0),
+                  (%(d)s, 'gfc_2008', 'historical', 'U', %(r)s, 14000.0, 12000.0, 2000.0)""",
+        {"d": int(dfr[0]), "r": int(margin[0])},
+    )
     got = conn.execute(
         """INSERT INTO stress_runs (portfolio_code, universe, as_of_date, positions_as_of,
                portfolio_value, es_975, scenario_set_sha256, params)
@@ -233,3 +265,22 @@ def test_dashboard_smoke(seeded: psycopg.Connection[Any], monkeypatch: pytest.Mo
     assert not at.exception, [e.value for e in at.exception]
     assert any("950" in m.value for m in at.metric)
     assert any("Backtest" in h.value for h in at.subheader)
+
+
+def test_margin_endpoints(client: Any) -> None:
+    m = client.get("/margin", params={"universe": "u", "portfolio": "T"}).json()
+    assert m["as_of"] == "2024-01-12" and m["horizon_days"] == 2 and m["tag"] == "margin_batch"
+    assert m["im"] == {"im": 12000.0, "im_core": 11000.0}
+    assert client.get("/margin", params={"universe": "u", "portfolio": "X"}).status_code == 404
+    cv = client.get("/margin/coverage", params={"universe": "u", "portfolio": "T"}).json()
+    assert cv["totals"]["days"] == 1 and cv["totals"]["breaches"] == 1
+    assert cv["totals"]["coverage"] == 0.0 and cv["windows"][0]["target"] == 0.99
+    assert cv["params"]["margin_params_sha256"] == "m" * 64
+    days = client.get(
+        "/margin/coverage/days", params={"universe": "u", "portfolio": "T", "breaches_only": 1}
+    ).json()
+    assert len(days) == 1 and days[0]["shortfall"] == 1000.0 and days[0]["breach_span"] is False
+    dfr = client.get("/default-fund", params={"universe": "u"}).json()
+    assert dfr["default_fund"] == 5000.0 and dfr["binding_members"] == ["T", "U"]
+    assert [r["uncovered"] for r in dfr["results"]] == [3000.0, 2000.0]
+    assert client.get("/default-fund", params={"universe": "nope"}).status_code == 404

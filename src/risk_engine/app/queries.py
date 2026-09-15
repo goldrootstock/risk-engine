@@ -100,6 +100,54 @@ FROM stress_results WHERE stress_run_id = %(id)s
 ORDER BY kind, loss DESC
 """
 
+COVERAGE_BATCH_SQL = """
+SELECT summary_id, window_start, window_end, n_obs, breaches, breaches_raw, breaches_core,
+       breaches_span, coverage, target, kupiec_lr, kupiec_p, max_shortfall,
+       max_shortfall_over_im, params, code_version, created_at
+FROM margin_coverage_summaries
+WHERE universe = %(universe)s AND portfolio_code = %(portfolio)s
+  AND created_at = (SELECT max(created_at) FROM margin_coverage_summaries
+                    WHERE universe = %(universe)s AND portfolio_code = %(portfolio)s)
+ORDER BY window_start
+"""
+
+COVERAGE_TOTALS_SQL = """
+SELECT count(*), count(*) FILTER (WHERE breach), count(*) FILTER (WHERE breach_raw),
+       count(*) FILTER (WHERE breach_core), count(*) FILTER (WHERE breach_span),
+       count(*) FILTER (WHERE h_business_days > %(mpor)s),
+       max(shortfall), min(as_of_date), max(as_of_date)
+FROM margin_coverage_results
+WHERE universe = %(universe)s AND portfolio_code = %(portfolio)s
+"""
+
+COVERAGE_DAYS_SQL = """
+SELECT run_id, as_of_date, pnl_date, h_business_days, realised_loss, im, im_core,
+       im_span_legacy, im_h_block, breach, breach_raw, breach_core, breach_span, shortfall,
+       attribution
+FROM margin_coverage_results
+WHERE universe = %(universe)s AND portfolio_code = %(portfolio)s
+  AND (%(start)s::date IS NULL OR as_of_date >= %(start)s)
+  AND (%(end)s::date IS NULL OR as_of_date <= %(end)s)
+  AND (NOT %(only)s OR breach OR breach_raw)
+ORDER BY as_of_date
+"""
+
+DEFAULT_FUND_RUN_SQL = """
+SELECT default_fund_run_id, as_of_date, scenario_set_sha256, margin_params_sha256, n_members,
+       cover, default_fund, binding_scenario, binding_members, params, code_version, created_at
+FROM default_fund_runs
+WHERE universe = %(universe)s
+  AND (%(as_of)s::date IS NULL OR as_of_date <= %(as_of)s)
+ORDER BY as_of_date DESC, default_fund_run_id DESC
+LIMIT 1
+"""
+
+DEFAULT_FUND_RESULTS_SQL = """
+SELECT scenario, kind, portfolio_code, im_run_id, stress_loss, im, uncovered
+FROM default_fund_results WHERE default_fund_run_id = %(id)s
+ORDER BY scenario, uncovered DESC, portfolio_code
+"""
+
 Row = dict[str, Any]
 
 
@@ -378,5 +426,161 @@ def stress_latest(
                 "attribution": s[8],
             }
             for s in res
+        ],
+    }
+
+
+def margin_latest(
+    conn: psycopg.Connection[Any],
+    universe: str,
+    portfolio: str,
+    *,
+    tag: str = "margin_batch",
+    horizon_days: int = 2,
+    as_of: date | None = None,
+) -> Row | None:
+    """Newest margin run (2-day MPOR series) with its IM decomposition (design note 09 §8).
+
+    Same header shape as :func:`latest_run`, plus ``im`` (the portfolio-level ``im_*``
+    measures keyed by name) and ``instrument_addons`` (liquidity / concentration per
+    instrument id). Selected positively by ``(tag, horizon_days)``.
+    """
+    run = latest_run(
+        conn, universe, portfolio, method="fhs", tag=tag, horizon_days=horizon_days, as_of=as_of
+    )
+    if run is None:
+        return None
+    run["im"] = {m["measure"]: m["value"] for m in run["measures"] if m["measure"].startswith("im")}
+    run["instrument_addons"] = {
+        k: {m["scope_key"]: m["value"] for m in v} for k, v in run["other_scopes"].items()
+    }
+    return run
+
+
+def coverage_latest(
+    conn: psycopg.Connection[Any], universe: str, portfolio: str, *, mpor_days: int = 2
+) -> Row | None:
+    """Window table of the newest margin coverage batch plus day-level totals."""
+    key = {"universe": universe, "portfolio": portfolio}
+    win = conn.execute(COVERAGE_BATCH_SQL, key).fetchall()
+    if not win:
+        return None
+    t = conn.execute(COVERAGE_TOTALS_SQL, {**key, "mpor": mpor_days}).fetchone()
+    assert t is not None
+    return {
+        "universe": universe,
+        "portfolio": portfolio,
+        "params": win[0][14] or {},
+        "code_version": win[0][15],
+        "created_at": win[0][16].isoformat(),
+        "totals": {
+            "days": int(t[0]),
+            "breaches": int(t[1]),
+            "breaches_raw": int(t[2]),
+            "breaches_core": int(t[3]),
+            "breaches_span": int(t[4]),
+            "coverage": 1.0 - int(t[1]) / int(t[0]) if int(t[0]) else None,
+            "multi_day_transitions": int(t[5]),
+            "max_shortfall": _num(t[6]),
+            "first": _iso(t[7]),
+            "last": _iso(t[8]),
+        },
+        "windows": [
+            {
+                "summary_id": int(w[0]),
+                "window_start": _iso(w[1]),
+                "window_end": _iso(w[2]),
+                "n_obs": int(w[3]),
+                "breaches": int(w[4]),
+                "breaches_raw": int(w[5]),
+                "breaches_core": int(w[6]),
+                "breaches_span": _num(w[7]),
+                "coverage": float(w[8]),
+                "target": float(w[9]),
+                "kupiec_lr": _num(w[10]),
+                "kupiec_p": _num(w[11]),
+                "max_shortfall": float(w[12]),
+                "max_shortfall_over_im": _num(w[13]),
+            }
+            for w in win
+        ],
+    }
+
+
+def coverage_days(
+    conn: psycopg.Connection[Any],
+    universe: str,
+    portfolio: str,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+    breaches_only: bool = False,
+) -> list[Row]:
+    """Day rows of the coverage backtest: realised loss, IM yardsticks, breach flags."""
+    rows = conn.execute(
+        COVERAGE_DAYS_SQL,
+        {
+            "universe": universe,
+            "portfolio": portfolio,
+            "start": start,
+            "end": end,
+            "only": breaches_only,
+        },
+    ).fetchall()
+    return [
+        {
+            "run_id": int(r[0]),
+            "as_of": _iso(r[1]),
+            "pnl_date": _iso(r[2]),
+            "h": int(r[3]),
+            "realised_loss": float(r[4]),
+            "im": float(r[5]),
+            "im_core": float(r[6]),
+            "im_span_legacy": _num(r[7]),
+            "im_h_block": _num(r[8]),
+            "breach": bool(r[9]),
+            "breach_raw": bool(r[10]),
+            "breach_core": bool(r[11]),
+            "breach_span": None if r[12] is None else bool(r[12]),
+            "shortfall": float(r[13]),
+            "attribution": r[14],
+        }
+        for r in rows
+    ]
+
+
+def default_fund_latest(
+    conn: psycopg.Connection[Any], universe: str, *, as_of: date | None = None
+) -> Row | None:
+    """Newest Cover-N sizing on/before ``as_of`` with every (scenario, member) row."""
+    r = conn.execute(DEFAULT_FUND_RUN_SQL, {"universe": universe, "as_of": as_of}).fetchone()
+    if r is None:
+        return None
+    rows = conn.execute(DEFAULT_FUND_RESULTS_SQL, {"id": int(r[0])}).fetchall()
+    return {
+        "default_fund_run_id": int(r[0]),
+        "universe": universe,
+        "as_of": _iso(r[1]),
+        "scenario_set_sha256": r[2],
+        "margin_params_sha256": r[3],
+        "n_members": int(r[4]),
+        "cover": int(r[5]),
+        "default_fund": float(r[6]),
+        "binding_scenario": r[7],
+        "binding_members": list(r[8]),
+        "params": r[9],
+        "code_version": r[10],
+        "created_at": r[11].isoformat(),
+        "results": [
+            {
+                "scenario": x[0],
+                "kind": x[1],
+                "portfolio": x[2],
+                "im_run_id": int(x[3]),
+                "stress_loss": float(x[4]),
+                "im": float(x[5]),
+                "uncovered": float(x[6]),
+            }
+            for x in rows
         ],
     }
