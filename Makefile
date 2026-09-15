@@ -18,8 +18,8 @@ lint:
 typecheck:
 	$(PY)/mypy
 
-test:
-	$(PY)/pytest -q
+test:            ## same flags as CI: coverage gate (pyproject fail_under) applies locally too
+	$(PY)/pytest -q --cov --cov-report=term-missing:skip-covered
 
 fmt:            ## write-mode formatter — review the diff before committing
 	$(PY)/ruff format .
