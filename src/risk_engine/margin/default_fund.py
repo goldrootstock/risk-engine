@@ -7,13 +7,23 @@ over scenarios, sum of the ``cover`` biggest uncovered excesses [PFMI Principle 
 EMIR Art. 42(3)]. Shock sizes come only from the scenario file; :func:`cover_n` is pure;
 :func:`record` is the only writer of ``default_fund_runs`` / ``default_fund_results``.
 
-Two bases (JK, 2026-09-15). The *official* basis is ``mpor``: a historical scenario
-contributes the worst ``horizon``-day (MPOR) window inside its date range, because the
-default fund covers the loss over the close-out period, not over a ten-month path
-[PFMI Principle 4: losses "in extreme but plausible market conditions" over the period the
-CCP holds the defaulter's positions]. The ``path`` basis (full cumulative change over the
-window) is kept as a separate path / liquidity analysis. Hypothetical shocks are instantaneous
-and identical under both bases.
+Three bases (JK decisions, 2026-09-15):
+
+* ``mpor_historical`` — **official**. Historical scenarios only, each contributing the worst
+  ``horizon``-day (MPOR) window inside its date range: the default fund covers the loss over
+  the close-out period [PFMI Principle 4: "extreme but plausible market conditions" over the
+  period the CCP holds the defaulter's positions]. The hypothetical shocks are excluded by
+  *category*, not by size: ``rates_up_200`` and its kind are Basel IRRBB supervisory shocks
+  for bank capital, instantaneous and not a close-out loss (the worst 2-day 10-year move in
+  the sample is about 50 bp; 200 bp is four times it). They are not rescaled to the MPOR
+  either — a rescaled standard shock is no longer the standard.
+* ``mpor`` — the same historical windows plus the hypothetical shocks, kept as the
+  supervisory-reference view.
+* ``path`` — whole-window cumulative change plus the hypothetical shocks, kept as the path /
+  liquidity view.
+
+All three are recorded on every run so that choosing the (smaller) official number stays
+visible next to the numbers it excludes (note 00 §3).
 """
 
 from __future__ import annotations
@@ -36,6 +46,9 @@ from risk_engine.risk.measures import to_loss
 from risk_engine.risk.pnl import pnl_matrix
 from risk_engine.risk.positions import load_snapshot
 from risk_engine.risk.returns import ReturnMatrix
+
+BASES: tuple[str, ...] = ("mpor_historical", "mpor", "path")
+OFFICIAL_BASIS = "mpor_historical"
 
 MEMBER_IM_SQL = """
 SELECT r.run_id, m.value
@@ -235,11 +248,13 @@ def stress_losses(
     scen: stress.ScenarioSet,
     *,
     horizon: int | None = None,
+    include_hypothetical: bool = True,
 ) -> list[ScenarioLoss]:
     """Every (scenario, member) loss from the scenario file, unscaled (note 07 §1-§2).
 
-    ``horizon=None`` is the ``path`` basis (whole-window cumulative change);
-    ``horizon=h`` is the ``mpor`` basis (worst h-day block inside each window).
+    ``horizon=None`` takes the whole-window cumulative change; ``horizon=h`` the worst h-day
+    block inside each window. ``include_hypothetical=False`` drops the hypothetical shocks
+    (the official ``mpor_historical`` basis).
     """
     out: list[ScenarioLoss] = []
     for code, book in books.items():
@@ -256,10 +271,30 @@ def stress_losses(
                         name, "historical", code, w.stress_loss, w.window_start, w.window_end
                     )
                 )
+        if not include_hypothetical:
+            continue
         for name, spec in scen.hypothetical.items():
             r = stress.hypothetical(rm, name, spec, book, specs)
             out.append(ScenarioLoss(name, "hypothetical", code, r.loss))
     return out
+
+
+def losses_for_basis(
+    rm: ReturnMatrix,
+    books: Mapping[str, Mapping[str, float]],
+    specs: Mapping[str, InstrumentSpec],
+    scen: stress.ScenarioSet,
+    basis: str,
+    mpor_days: int,
+) -> list[ScenarioLoss]:
+    """The scenario losses that define ``basis`` (see the module docstring)."""
+    if basis == "mpor_historical":
+        return stress_losses(rm, books, specs, scen, horizon=mpor_days, include_hypothetical=False)
+    if basis == "mpor":
+        return stress_losses(rm, books, specs, scen, horizon=mpor_days)
+    if basis == "path":
+        return stress_losses(rm, books, specs, scen)
+    raise ValueError(f"unknown basis {basis!r}; expected one of {BASES}")
 
 
 INSERT_RUN = """
@@ -293,8 +328,8 @@ def record(
     ``params`` must carry ``basis`` (``mpor`` | ``path``); the windows actually used per
     (scenario, member) are stored from ``losses`` under ``params.windows``.
     """
-    if params.get("basis") not in ("mpor", "path"):
-        raise ValueError("params['basis'] must be 'mpor' or 'path'")
+    if params.get("basis") not in BASES:
+        raise ValueError(f"params['basis'] must be one of {BASES}")
     windows = {
         f"{sl.scenario}/{sl.portfolio_code}": [
             sl.window_start.isoformat(),

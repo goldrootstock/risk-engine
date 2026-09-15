@@ -127,11 +127,18 @@ def test_default_fund_round_trip(conn: psycopg.Connection[Any]) -> None:
         seed=1,
         sha256="s" * 64,
     )
-    losses = df.stress_losses(rm, books, specs, scen, horizon=mp.mpor_days)  # official basis
-    path = df.stress_losses(rm, books, specs, scen)  # path basis
+    losses = df.losses_for_basis(rm, books, specs, scen, "mpor", mp.mpor_days)
+    official = df.losses_for_basis(rm, books, specs, scen, "mpor_historical", mp.mpor_days)
+    path = df.losses_for_basis(rm, books, specs, scen, "path", mp.mpor_days)
     rep = df.cover_n(losses, ims, mp.cover)
     conn.execute("SET default_transaction_read_only = off")
     assert len(losses) == 6 and rep.n_members == 3 and rep.cover == 2
+    assert len(official) == 3 and all(sl.kind == "historical" for sl in official)
+    assert [sl.stress_loss for sl in official] == [
+        sl.stress_loss for sl in losses if sl.kind == "historical"
+    ]
+    with pytest.raises(ValueError, match="unknown basis"):
+        df.losses_for_basis(rm, books, specs, scen, "x", 2)
     # the worst 2-day block inside a window never loses less than ... nothing in general, but
     # it is bounded by the largest 2-day move: windows are recorded and lie inside the scenario
     for sl in losses:

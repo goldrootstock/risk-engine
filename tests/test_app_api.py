@@ -284,6 +284,6 @@ def test_margin_endpoints(client: Any) -> None:
     assert dfr["default_fund"] == 5000.0 and dfr["binding_members"] == ["T", "U"]
     assert [r["uncovered"] for r in dfr["results"]] == [3000.0, 2000.0]
     assert dfr["basis"] == "path"  # a run recorded without a basis counts as path
-    assert client.get("/default-fund", params={"universe": "u"}).status_code == 404  # no mpor run
+    assert client.get("/default-fund", params={"universe": "u"}).status_code == 404  # no official
     assert client.get("/default-fund", params={"universe": "u", "basis": "x"}).status_code == 422
     assert client.get("/default-fund", params={"universe": "nope"}).status_code == 404

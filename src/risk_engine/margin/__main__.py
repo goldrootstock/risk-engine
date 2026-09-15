@@ -213,9 +213,16 @@ def run_default_fund(
     rm, specs, books, ims = default_fund.load_inputs(
         conn, args.universe, args.as_of, members, mpor_days=mp.mpor_days, tag=args.tag
     )
-    # official basis first (worst MPOR window inside each scenario), then the path basis
-    for basis, horizon in (("mpor", mp.mpor_days), ("path", None)):
-        losses = default_fund.stress_losses(rm, books, specs, scen, horizon=horizon)
+    # official basis first (historical scenarios, worst MPOR window inside each), then the
+    # supervisory-reference view (adds the hypothetical shocks) and the path view
+    labels = {
+        "mpor_historical": "official (historical scenarios, worst MPOR window)",
+        "mpor": "supervisory reference (adds hypothetical shocks)",
+        "path": "path / liquidity (whole window)",
+    }
+    for basis in default_fund.BASES:
+        horizon = None if basis == "path" else mp.mpor_days
+        losses = default_fund.losses_for_basis(rm, books, specs, scen, basis, mp.mpor_days)
         rep = default_fund.cover_n(losses, ims, mp.cover)
         run_id = default_fund.record(
             conn,
@@ -234,9 +241,8 @@ def run_default_fund(
             code_version=version,
             losses=losses,
         )
-        label = "official (worst MPOR window)" if basis == "mpor" else "path (whole window)"
         print(
-            f"default_fund_run_id={run_id} basis={basis} [{label}] as_of={args.as_of} "
+            f"default_fund_run_id={run_id} basis={basis} [{labels[basis]}] as_of={args.as_of} "
             f"cover={rep.cover} default_fund={rep.default_fund:,.0f} "
             f"scenario={rep.binding_scenario} members={','.join(rep.binding_members)}"
         )

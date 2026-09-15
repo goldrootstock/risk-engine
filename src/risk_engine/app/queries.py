@@ -553,14 +553,14 @@ def default_fund_latest(
     conn: psycopg.Connection[Any],
     universe: str,
     *,
-    basis: str = "mpor",
+    basis: str = "mpor_historical",
     as_of: date | None = None,
 ) -> Row | None:
     """Newest Cover-N sizing on/before ``as_of`` with every (scenario, member) row.
 
-    ``basis``: ``mpor`` (official — worst MPOR window inside each historical scenario) or
-    ``path`` (whole-window cumulative loss, the path / liquidity view). Runs recorded before
-    the basis existed count as ``path``.
+    ``basis``: ``mpor_historical`` (official — historical scenarios, worst MPOR window inside
+    each), ``mpor`` (adds the hypothetical supervisory shocks) or ``path`` (whole-window
+    cumulative loss). Runs recorded before the basis existed count as ``path``.
     """
     r = conn.execute(
         DEFAULT_FUND_RUN_SQL, {"universe": universe, "basis": basis, "as_of": as_of}

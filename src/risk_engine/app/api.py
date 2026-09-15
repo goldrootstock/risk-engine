@@ -242,11 +242,14 @@ def margin_coverage_days(
 
 @app.get("/default-fund")
 def default_fund(
-    conn: Conn, universe: Universe = "from_1999", basis: str = "mpor", as_of: AsOf = None
+    conn: Conn,
+    universe: Universe = "from_1999",
+    basis: str = "mpor_historical",
+    as_of: AsOf = None,
 ) -> dict[str, Any]:
-    """Newest Cover-N default fund sizing (basis mpor = official, path = path analysis)."""
-    if basis not in ("mpor", "path"):
-        raise HTTPException(422, "basis must be 'mpor' or 'path'")
+    """Newest Cover-N sizing: basis mpor_historical (official), mpor (+ hypothetical), path."""
+    if basis not in ("mpor_historical", "mpor", "path"):
+        raise HTTPException(422, "basis must be 'mpor_historical', 'mpor' or 'path'")
     dfr = queries.default_fund_latest(conn, universe, basis=basis, as_of=as_of)
     if dfr is None:
         raise HTTPException(404, f"no default fund run for {universe} on basis {basis}")

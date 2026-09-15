@@ -348,8 +348,8 @@ def _margin_section(
     if dfr is not None:
         st.caption(
             f"default fund as of {dfr['as_of']} · Cover-{dfr['cover']} · {dfr['n_members']} "
-            f"members · basis {dfr['basis']} (mpor = worst MPOR window inside each scenario, "
-            f"official) · scenario set {dfr['scenario_set_sha256'][:12]}"
+            f"members · basis {dfr['basis']} (mpor_historical = official: historical "
+            f"scenarios, worst MPOR window) · scenario set {dfr['scenario_set_sha256'][:12]}"
         )
         c1, c2, c3 = st.columns(3)
         c1.metric("default fund", _money(dfr["default_fund"]))
