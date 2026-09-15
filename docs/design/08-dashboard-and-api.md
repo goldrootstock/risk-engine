@@ -53,6 +53,9 @@ API 와 대시보드가 **같은 함수** 를 부른다. 두 화면의 숫자가
 | `GET /backtest` | `backtest_latest` | |
 | `GET /backtest/days` | `backtest_days` | `exceptions_only=true` 로 초과일만 |
 | `GET /stress` | `stress_latest` | |
+| `GET /margin` | `margin_latest` | v1.2 (노트 09): `tag`(기본 margin_batch)·`horizon_days`(기본 2) 양성 선택. IM 분해·add-on |
+| `GET /margin/coverage`, `GET /margin/coverage/days` | `coverage_latest`, `coverage_days` | 최신 배치(같은 `created_at`), 세 잣대의 breach |
+| `GET /default-fund` | `default_fund_latest` | universe 기준 최신 Cover-N 실행과 (시나리오 × 회원) 전표 |
 
 **실행 계열의 양성 선택 (2026-09-15, JK 승인 1).** `latest_run`·`headline_series`·`backtest.runner`
 는 실행을 `(universe, portfolio, tag, method, horizon_days)` 로 **명시적으로 고른다**. `horizon_days`

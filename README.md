@@ -6,8 +6,11 @@ H.15 via FRED, ECB reference rates, EIA spot prices), builds a factor change mat
 1-day **Expected Shortfall 97.5 % and VaR 99 %** by filtered historical simulation (EWMA/GARCH
 scaling, date-wise joint residual sampling) with parametric and Monte Carlo cross-checks, and
 validates the result the way a regulator would: Kupiec, Christoffersen, Basel traffic light, a
-PLA-style test, and a stress module. Every parameter is pinned by a test and every run records
-the hash of the configuration it used.
+PLA-style test, and a stress module. On top of it sits a **CCP-style margin module**: a 2-day
+MPOR initial margin (FHS ES 99 %, EMIR-style volatility floor and stress blend, liquidity and
+concentration add-ons), a legacy SPAN 16-scenario comparison, a CPMI-IOSCO coverage backtest
+and a Cover-2 default fund over four clearing members. Every parameter is pinned by a test and
+every run records the hash of the configuration it used.
 
 **Start here: [`docs/model_document.md`](docs/model_document.md)** — the SR 11-7-style model
 document. It is written as an argument, not a results list: *every backtest passed — so is the
@@ -31,6 +34,21 @@ model trustworthy?*
   ES/VaR = 1.005 (normal theory 1.005) vs FHS 1.038; the stress replay of 2020-04-20 reproduces
   the backtest's worst loss to the dollar (10,790,530); FRED and Treasury yields matched on
   every overlapping date.
+- **The margin covers 99.92 % of 6,178 two-day transitions (5 breaches, 61.8 expected at
+  99 %) — a pass that is also over-margining:** 21 of 25 windows have no breach at all and
+  reject a two-sided Kupiec test on the conservative side. The core ES alone (no floor, no
+  stress blend) already covers 99.50 %. The one day nothing covers is again 2020-04-20: loss
+  3.34× the margin, 3.3× under legacy SPAN too.
+- **Legacy SPAN asks for 1.9× the FHS margin and still breaches on the two tail days.**
+  Summing per-instrument scan ranges with partial spread credits is expensive in normal
+  markets and weak in the tail.
+- **Cover-2 depends on the horizon you give the scenarios.** Over whole scenario paths the
+  2022 ten-month rate rise sets it (49.6 M, the long-duration member). Over the 2-day MPOR —
+  the horizon a CCP actually holds a defaulter's positions — the historical scenarios are
+  set by the WTI-long/Brent-short member on 2020-04-17→20 (3.4× its margin): the same
+  correlation-dependent structure that raised the A1 ES 1.74×. The one thing still above it
+  is an instantaneous +200 bp hypothetical shock, which has the same horizon problem the
+  path had — flagged, not resolved.
 
 ## Reproduce
 
@@ -43,6 +61,10 @@ python -m risk_engine.risk load-positions config/positions_main.csv
 python -m risk_engine.risk backfill --from 1999-01-05 --to 2026-09-09 --universe from_1999 --tag daily_batch
 python -m risk_engine.backtest run --universe from_1999 --portfolio MAIN
 python -m risk_engine.risk stress --as-of 2026-09-09 --universe from_1999 --portfolio MAIN
+python -m risk_engine.margin load-members                             # four clearing members
+python -m risk_engine.margin backfill --portfolio MAIN --universe from_1999 --tag margin_batch --from 2001-05-15 --to 2026-09-09
+python -m risk_engine.margin coverage --portfolio MAIN --universe from_1999
+python -m risk_engine.margin default-fund --as-of 2026-09-09 --universe from_1999 --run-margin
 make check                                                            # ruff, mypy, pytest (needs the DB)
 make api                                                              # read-only FastAPI on :8000 (/docs)
 make dashboard                                                        # Streamlit on :8501
@@ -73,14 +95,17 @@ Frequency tests pass, but the tail *size* is outside them (6.39×), the multi-da
 a correction that leaves the model conservative (0.81 % exceptions, four zero-exception windows
 reject Kupiec on the low side), the PLA test has no power on a linear book, DGS30 for
 2002–2006 is an H.15 estimate rather than an observation, and the portfolio is an arbitrary
-book in which energy carries 82 % of ES. Full discussion: model document §7.
+book in which energy carries 82 % of ES. The margin module prices the spot book as if it were
+cleared with zero carry — which removes the very mechanism (storage cost and contango) that
+made 2020-04-20 happen — and its coverage test is self-consistent by construction. Full
+discussion: model document §7.
 
 ## Layout
 
 ```
-config/          universe, sample sets, risk / backtest / stress parameters (all pinned by tests)
+config/          universe, sample sets, risk / backtest / stress / margin parameters, members (all pinned by tests)
 db/migrations/   plain-SQL schema, one transaction each
-src/risk_engine/ data (ETL), risk (returns, FHS, parametric, MC, stress), backtest, app (read-only API + dashboard)
+src/risk_engine/ data (ETL), risk (returns, FHS, parametric, MC, stress), backtest, margin (IM, SPAN, coverage, default fund), app (read-only API + dashboard)
 docs/design/     numbered design notes — proposals, counter-proposals, decisions
 docs/            decisions.md (every parameter with its source), walkthrough.md, model_document.md
 ```
