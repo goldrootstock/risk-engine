@@ -61,6 +61,7 @@ def test_upgrade_creates_tables_and_is_idempotent(db_conn: psycopg.Connection[An
         "0006_backtests",
         "0007_stress",
         "0008_backtest_horizon",
+        "0009_margin",
     ]
     expected = {
         "schema_migrations",

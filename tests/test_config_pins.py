@@ -249,3 +249,57 @@ def test_margin_params_are_pinned() -> None:
         "config/margin_params.toml changed: update EXPECTED_MARGIN_PARAMS in the same commit "
         "and say why in the message (design note 00 §3-1)"
     )
+
+
+EXPECTED_POSITIONS_MEMBERS = {
+    "CM_ENERGY": {
+        "WTI": 300_000,
+        "GASOLINE_NYH": 3_000_000,
+        "HEATOIL_NYH": 1_000_000,
+        "HENRYHUB": 1_000_000,
+        "EURUSD": 5_000_000,
+    },
+    "CM_RATES": {
+        "UST_3M": 50_000_000,
+        "UST_2Y": 100_000_000,
+        "UST_5Y": 80_000_000,
+        "UST_10Y": 60_000_000,
+        "UST_30Y": 20_000_000,
+    },
+    "CM_DIVERSIFIED": {
+        "EURUSD": 15_000_000,
+        "EURJPY": 1_500_000_000,
+        "EURGBP": 8_000_000,
+        "EURAUD": 8_000_000,
+        "WTI": 40_000,
+        "HENRYHUB": 200_000,
+        "UST_2Y": 30_000_000,
+        "UST_5Y": 30_000_000,
+        "UST_10Y": 20_000_000,
+    },
+    "CM_HEDGED": {
+        "WTI": 400_000,
+        "BRENT": -400_000,
+        "GASOLINE_NYH": 2_000_000,
+        "HEATOIL_NYH": -2_000_000,
+        "UST_10Y": 50_000_000,
+        "UST_5Y": -100_000_000,
+        "EURUSD": 20_000_000,
+        "EURGBP": -15_000_000,
+    },
+}
+
+
+def test_positions_members_are_pinned() -> None:
+    """Four clearing members with different risk profiles (note 09 §7, JK approval 3)."""
+    with (REPO_ROOT / "config" / "positions_members.csv").open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    got: dict[str, dict[str, float]] = {}
+    for r in rows:
+        got.setdefault(r["portfolio_code"], {})[r["ticker"]] = float(r["quantity"])
+    assert got == EXPECTED_POSITIONS_MEMBERS
+    assert {r["as_of_date"] for r in rows} == {"1999-01-04"}
+    # every member is in the from_1999 set (no UST_1M, no EURCNY) and none is MAIN
+    assert "MAIN" not in got and not any(
+        t in ("UST_1M", "EURCNY") for book in got.values() for t in book
+    )
