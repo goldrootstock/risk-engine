@@ -1,4 +1,4 @@
-"""Command line: ``python -m risk_engine.margin run|backfill|load-members|coverage``.
+"""Command line: ``python -m risk_engine.margin run|backfill|load-members|coverage|default-fund``.
 
 Mirrors ``python -m risk_engine.risk``: one run, or every aligned date in a range (the
 official ``margin_batch`` series for the coverage backtest). Every command propagates
@@ -17,10 +17,10 @@ from typing import Any
 
 import psycopg
 
-from risk_engine.margin import coverage, engine
+from risk_engine.margin import coverage, default_fund, engine
 from risk_engine.margin.params import MarginParams
 from risk_engine.risk import engine as risk_engine
-from risk_engine.risk import record
+from risk_engine.risk import record, stress
 from risk_engine.risk.positions import load_positions_csv
 from risk_engine.settings import SettingsError, load_settings
 
@@ -54,6 +54,17 @@ def build_parser() -> argparse.ArgumentParser:
     cv.add_argument("--portfolio", default="MAIN")
     cv.add_argument("--universe", default="from_1999")
     cv.add_argument("--tag", default=engine.OFFICIAL_TAG)
+
+    dfp = sub.add_parser("default-fund", help="Cover-N default fund from members' stress losses")
+    dfp.add_argument("--as-of", type=date.fromisoformat, required=True)
+    dfp.add_argument("--universe", default="from_1999")
+    dfp.add_argument("--members", default="CM_ENERGY,CM_RATES,CM_DIVERSIFIED,CM_HEDGED")
+    dfp.add_argument("--tag", default=engine.OFFICIAL_TAG, help="tag of the members' margin runs")
+    dfp.add_argument(
+        "--run-margin",
+        action="store_true",
+        help="compute and record a margin run for each member on --as-of first",
+    )
     return parser
 
 
@@ -88,6 +99,8 @@ def main(argv: list[str] | None = None) -> int:
         rp, mp = risk_engine.RiskParams.load(), MarginParams.load()
         if args.command == "coverage":
             return run_coverage(conn, args, rp, mp, version)
+        if args.command == "default-fund":
+            return run_default_fund(conn, args, rp, mp, version)
         if args.command == "run":
             res = engine.run(
                 conn,
@@ -171,6 +184,58 @@ def run_coverage(
             f"  {w.window_start}..{w.window_end} n={w.n_obs} breaches={w.breaches} "
             f"coverage={w.coverage:.4f} kupiec_p={w.kupiec.p_value:.3f} "
             f"max_shortfall={w.max_shortfall:,.0f}"
+        )
+    return 0
+
+
+def run_default_fund(
+    conn: psycopg.Connection[Any],
+    args: argparse.Namespace,
+    rp: risk_engine.RiskParams,
+    mp: MarginParams,
+    version: str | None,
+) -> int:
+    """Size the default fund against the members' recorded margins on ``--as-of``."""
+    members = [m.strip() for m in args.members.split(",") if m.strip()]
+    if args.run_margin:
+        for code in members:
+            res = engine.run(
+                conn,
+                code,
+                args.as_of,
+                universe_name=args.universe,
+                risk_params=rp,
+                margin_params=mp,
+                tag=args.tag,
+            )
+            _print_head(record.write(conn, res, version), res)
+    scen = stress.ScenarioSet.load()
+    rm, specs, books, ims = default_fund.load_inputs(
+        conn, args.universe, args.as_of, members, mpor_days=mp.mpor_days, tag=args.tag
+    )
+    losses = default_fund.stress_losses(rm, books, specs, scen)
+    rep = default_fund.cover_n(losses, ims, mp.cover)
+    run_id = default_fund.record(
+        conn,
+        rep,
+        universe=args.universe,
+        as_of=args.as_of,
+        scenario_sha256=scen.sha256,
+        margin_params_sha256=mp.sha256,
+        params={"members": members, "tag": args.tag, "allocation": mp.allocation},
+        code_version=version,
+    )
+    print(
+        f"default_fund_run_id={run_id} as_of={args.as_of} cover={rep.cover} "
+        f"default_fund={rep.default_fund:,.0f} scenario={rep.binding_scenario} "
+        f"members={','.join(rep.binding_members)}"
+    )
+    for code in members:
+        im = ims[code].im
+        worst = max((r for r in rep.rows if r.portfolio_code == code), key=lambda r: r.uncovered)
+        print(
+            f"  {code:16} im={im:14,.0f} worst={worst.scenario:22} "
+            f"loss={worst.stress_loss:14,.0f} uncovered={worst.uncovered:14,.0f}"
         )
     return 0
 
